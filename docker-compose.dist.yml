@@ -47,7 +47,7 @@ services:
 
   # --- Servidor Python (FastAPI + pipeline) ---
   servidor:
-    image: lucasborgs/gpteco:latest   # imagem pré-compilada do Docker Hub
+    image: iamlucb/gpteco:latest   # imagem pré-compilada do Docker Hub
     container_name: servidor
     restart: unless-stopped
     ports:
