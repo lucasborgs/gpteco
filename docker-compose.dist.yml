@@ -1,0 +1,81 @@
+# ============================================================
+# Agente Virtual Musical — Distribuição (clientes)
+# ============================================================
+# Use este arquivo se você recebeu a solução pronta (sem código-fonte).
+# A imagem já vem pré-compilada do Docker Hub.
+#
+# WAHA     — WhatsApp HTTP API     (porta 3001)
+# servidor — FastAPI + pipeline    (porta 8002)
+# ============================================================
+# Iniciar:   docker compose -f docker-compose.dist.yml up -d
+# Parar:     docker compose -f docker-compose.dist.yml down
+# Atualizar: docker compose -f docker-compose.dist.yml pull && docker compose -f docker-compose.dist.yml up -d
+# Logs:      docker compose -f docker-compose.dist.yml logs -f servidor
+# Dashboard: http://localhost:3001/dashboard
+# ============================================================
+
+services:
+
+  # --- WAHA (WhatsApp HTTP API) ---
+  waha:
+    image: devlikeapro/waha:latest
+    platform: linux/amd64
+    container_name: waha
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      WHATSAPP_API_KEY: ${WAHA_API_KEY:-minhaChave123}
+
+      WAHA_DASHBOARD_ENABLED: "true"
+      WAHA_DASHBOARD_USERNAME: admin
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_API_KEY:-minhaChave123}
+
+      WHATSAPP_HOOK_URL: http://servidor:8002/webhook
+      WHATSAPP_HOOK_EVENTS: "message,session.status"
+
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      WHATSAPP_START_SESSION: default
+
+      TZ: America/Sao_Paulo
+
+    volumes:
+      - waha_sessions:/app/.sessions
+
+    networks:
+      - agente_net
+
+  # --- Servidor Python (FastAPI + pipeline) ---
+  servidor:
+    image: lucasborgs/gpteco:latest   # imagem pré-compilada do Docker Hub
+    container_name: servidor
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+
+    env_file: .env
+
+    environment:
+      WAHA_URL: http://waha:3000
+
+    volumes:
+      # Sem bind mount de código-fonte (cliente não tem o código)
+      - ${ACERVO_DIR:-./workspace/acervo_limpo}:/app/workspace/acervo_limpo
+      - ${FILA_ZARA_DIR:-./workspace/fila_zara}:/app/workspace/fila_zara
+      - ${TEMP_DIR:-./workspace/temp}:/app/workspace/temp
+      - ${DATA_DIR:-./data}:/app/data
+      - whisper_cache:/root/.cache/whisper
+
+    depends_on:
+      - waha
+
+    networks:
+      - agente_net
+
+networks:
+  agente_net:
+    driver: bridge
+
+volumes:
+  waha_sessions:
+  whisper_cache:
