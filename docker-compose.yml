@@ -1,0 +1,93 @@
+# ============================================================
+# Agente Virtual Musical — Stack completa
+# ============================================================
+# WAHA     — WhatsApp HTTP API     (porta 3001)
+# servidor — FastAPI + pipeline    (porta 8002)
+# ============================================================
+# Iniciar:   docker compose up -d
+# Rebuild:   docker compose build servidor
+# Parar:     docker compose down
+# Logs:      docker compose logs -f servidor
+# Dashboard: http://localhost:3001/dashboard
+# ============================================================
+
+services:
+
+  # --- WAHA (WhatsApp HTTP API) ---
+  waha:
+    image: devlikeapro/waha:latest
+    platform: linux/amd64        # necessário para Mac Apple Silicon e emulação Windows
+    container_name: waha
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      # Autenticação da API
+      WHATSAPP_API_KEY: minhaChave123
+
+      # Dashboard web (QR code e gerenciamento)
+      WAHA_DASHBOARD_ENABLED: "true"
+      WAHA_DASHBOARD_USERNAME: admin
+      WAHA_DASHBOARD_PASSWORD: minhaChave123
+
+      # Webhook → servidor Python (nome do serviço na rede interna Docker)
+      WHATSAPP_HOOK_URL: http://servidor:8002/webhook
+      WHATSAPP_HOOK_EVENTS: "message,session.status"
+
+      # Engine NOWEB = Baileys (mais leve, sem Chrome)
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+
+      # Iniciar automaticamente a sessão "default"
+      WHATSAPP_START_SESSION: default
+
+      # Timezone
+      TZ: America/Sao_Paulo
+
+    volumes:
+      - waha_sessions:/app/.sessions
+
+    networks:
+      - agente_net
+
+  # --- Servidor Python (FastAPI + pipeline) ---
+  servidor:
+    build: .
+    container_name: servidor
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+
+    # Carrega todas as variáveis do arquivo .env
+    env_file: .env
+
+    environment:
+      # Sobrescreve WAHA_URL do .env para comunicação interna Docker
+      # (porta interna 3000 do container waha, não a 3001 mapeada no host)
+      WAHA_URL: http://waha:3000
+
+    volumes:
+      # Código-fonte — bind mount: mudanças em .py requerem apenas restart
+      - .:/app
+      # Diretórios configuráveis via .env — cada cliente aponta para suas pastas reais
+      # Padrões de desenvolvimento: ./workspace/...  (subpastas locais)
+      # Produção Windows: C:\Radio\... (conforme DB_PATH/ACERVO_DIR/etc. no .env)
+      - ${ACERVO_DIR:-./workspace/acervo_limpo}:/app/workspace/acervo_limpo
+      - ${FILA_ZARA_DIR:-./workspace/fila_zara}:/app/workspace/fila_zara
+      - ${TEMP_DIR:-./workspace/temp}:/app/workspace/temp
+      - ${DATA_DIR:-./data}:/app/data
+      # Modelo Whisper — volume nomeado para não baixar a cada rebuild
+      - whisper_cache:/root/.cache/whisper
+
+    depends_on:
+      - waha
+
+    networks:
+      - agente_net
+
+networks:
+  agente_net:
+    driver: bridge
+
+volumes:
+  waha_sessions:
+  whisper_cache:

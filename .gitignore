@@ -1,0 +1,32 @@
+# ============================================================
+# Agente Virtual Musical — .gitignore
+# ============================================================
+
+# Credenciais e configuração local — NUNCA versionar
+.env
+
+# Banco de dados — gerado automaticamente na primeira execução
+data/
+
+# Áudios — baixados/gerados em tempo de execução (podem ser grandes)
+workspace/acervo_limpo/
+workspace/fila_zara/
+workspace/temp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Arquivos temporários gerados em desenvolvimento
+qr.html
+qr.png
+
+# Configuração local do Claude Code (específico do desenvolvedor)
+.claude/

@@ -1,0 +1,21 @@
+# Nunca incluir no build
+.env
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Dados gerados em runtime (montados como volumes)
+workspace/
+data/
+*.duckdb
+
+# Git e ferramentas de dev
+.git/
+.gitignore
+.claude/
+
+# Modelo Whisper (baixado automaticamente no primeiro uso)
+# e fica no volume whisper_cache

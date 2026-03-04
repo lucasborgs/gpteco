@@ -1,0 +1,25 @@
+# === STT / Transcrição ===
+# openai-whisper  # substituído pela API Whisper do Groq (zero RAM local)
+
+# === LLM / Inteligência ===
+openai
+google-generativeai
+
+# === Banco de dados ===
+duckdb
+
+# === Processamento de áudio ===
+pydub
+audioop-lts  # compatibilidade do pydub com Python 3.13+
+
+# === Download e conversão ===
+yt-dlp
+ffmpeg-python
+
+# === Servidor webhook ===
+fastapi
+uvicorn[standard]
+httpx
+
+# === Utilitários ===
+python-dotenv
