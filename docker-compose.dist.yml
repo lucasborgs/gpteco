@@ -50,6 +50,7 @@ services:
     image: iamlucb/gpteco:latest   # imagem pré-compilada do Docker Hub
     container_name: servidor
     restart: unless-stopped
+    init: true                     # evita processos zumbi (ffmpeg/yt-dlp)
     ports:
       - "8002:8002"
 

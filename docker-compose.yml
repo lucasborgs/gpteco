@@ -54,6 +54,7 @@ services:
     build: .
     container_name: servidor
     restart: unless-stopped
+    init: true                     # evita processos zumbi (ffmpeg/yt-dlp)
     ports:
       - "8002:8002"
 
