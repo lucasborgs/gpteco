@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # --- Diretórios de trabalho (fallback; em produção são montados como volumes) ---
-RUN mkdir -p workspace/acervo_limpo workspace/fila_zara workspace/temp data
+RUN mkdir -p workspace/musicas/acervo_limpo workspace/musicas/fila_zara workspace/temp data
 
 # Porta do servidor webhook
 EXPOSE 8002
