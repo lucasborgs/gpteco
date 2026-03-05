@@ -18,7 +18,7 @@ services:
 
   # --- WAHA (WhatsApp HTTP API) ---
   waha:
-    image: devlikeapro/waha:latest
+    image: devlikeapro/waha:noweb-2026.3.2
     platform: linux/amd64
     entrypoint: ["/entrypoint.sh"]   # bypassa o tini da imagem (incompatível com este sistema)
     init: true                        # Docker provê seu próprio init (evita processos zumbi)
