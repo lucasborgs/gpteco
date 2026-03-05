@@ -66,6 +66,7 @@ def _baixar_youtube(query: str) -> str:
         "no_warnings": True,
         "noplaylist": True,
         "socket_timeout": 30,   # segundos — evita hang indefinido
+        "nopart": True,         # evita .part → rename (falha em volumes Windows)
     }
 
     print(f"[DOWNLOADER] Buscando no YouTube: '{query}'")

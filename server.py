@@ -51,6 +51,9 @@ from core.pipeline import processar_pedido
 
 app = FastAPI(title="Agente Virtual Musical", version="1.0.0")
 
+# Cache de IDs de mensagens já processadas (evita duplicatas do WAHA NOWEB)
+_mensagens_processadas: set[str] = set()
+
 
 # ---------------------------------------------------------------------------
 # Startup
@@ -113,6 +116,15 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     # Ignora mensagens enviadas pelo próprio bot
     if msg.get("fromMe"):
         return JSONResponse({"status": "ignored"})
+
+    # Deduplica: WAHA NOWEB pode entregar o mesmo webhook mais de uma vez
+    msg_id = msg.get("id", "")
+    if msg_id and msg_id in _mensagens_processadas:
+        return JSONResponse({"status": "duplicate"})
+    if msg_id:
+        _mensagens_processadas.add(msg_id)
+        if len(_mensagens_processadas) > 500:  # evita crescimento ilimitado
+            _mensagens_processadas.clear()
 
     # Mantém o JID completo como identificador único do ouvinte
     # WAHA NOWEB usa @lid em vez de @c.us — mantemos o JID inteiro para
