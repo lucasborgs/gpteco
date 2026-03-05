@@ -58,19 +58,28 @@ services:
 
     environment:
       WAHA_URL: http://waha:3000
-      # Caminhos internos do container (fixos, independente do SO do cliente)
-      # Os env vars do .env são usados APENAS como source dos volumes abaixo.
+      # Caminhos internos do container — SEMPRE fixos, independente do SO do cliente.
+      # Os vars do .env são usados SOMENTE como source dos volumes abaixo (host→container).
       ACERVO_DIR: /app/workspace/acervo_limpo
       FILA_ZARA_DIR: /app/workspace/fila_zara
       TEMP_DIR: /app/workspace/temp
       DATA_DIR: /app/data
+      DB_PATH: /app/data/acervo.duckdb   # database.py usa DB_PATH diretamente
 
     volumes:
-      # Sem bind mount de código-fonte (cliente não tem o código)
-      - ${ACERVO_DIR:-./workspace/acervo_limpo}:/app/workspace/acervo_limpo
-      - ${FILA_ZARA_DIR:-./workspace/fila_zara}:/app/workspace/fila_zara
-      - ${TEMP_DIR:-./workspace/temp}:/app/workspace/temp
-      - ${DATA_DIR:-./data}:/app/data
+      # Sintaxe longa (type: bind) para suportar caminhos com espaços no Windows
+      - type: bind
+        source: ${ACERVO_DIR:-./workspace/acervo_limpo}
+        target: /app/workspace/acervo_limpo
+      - type: bind
+        source: ${FILA_ZARA_DIR:-./workspace/fila_zara}
+        target: /app/workspace/fila_zara
+      - type: bind
+        source: ${TEMP_DIR:-./workspace/temp}
+        target: /app/workspace/temp
+      - type: bind
+        source: ${DATA_DIR:-./data}
+        target: /app/data
       - whisper_cache:/root/.cache/whisper
 
     depends_on:
