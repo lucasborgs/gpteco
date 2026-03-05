@@ -58,29 +58,27 @@ services:
 
     environment:
       WAHA_URL: http://waha:3000
-      # Caminhos internos do container — SEMPRE fixos, independente do SO do cliente.
-      # Os vars do .env são usados SOMENTE como source dos volumes abaixo (host→container).
+      # Caminhos internos do container — sempre fixos
       ACERVO_DIR: /app/workspace/acervo_limpo
-      FILA_ZARA_DIR: /app/workspace/fila_zara
       TEMP_DIR: /app/workspace/temp
       DATA_DIR: /app/data
-      DB_PATH: /app/data/acervo.duckdb   # database.py usa DB_PATH diretamente
+      DB_PATH: /app/data/acervo.duckdb
+      # fila_zara: único caminho que o ZaraRadio (Windows) precisa acessar
+      FILA_ZARA_DIR: /app/workspace/fila_zara
 
     volumes:
-      # Sintaxe longa (type: bind) para suportar caminhos com espaços no Windows
+      # Named volumes — Docker gerencia internamente, sem caminho Windows
+      - temp:/app/workspace/temp
+      - dados:/app/data
+      - whisper_cache:/root/.cache/whisper
+      # Bind mounts — pastas acessíveis pelo Windows
+      # Defina no .env com barras normais. Exemplo: C:/Radio/acervo_limpo
       - type: bind
         source: ${ACERVO_DIR:-./workspace/acervo_limpo}
         target: /app/workspace/acervo_limpo
       - type: bind
         source: ${FILA_ZARA_DIR:-./workspace/fila_zara}
         target: /app/workspace/fila_zara
-      - type: bind
-        source: ${TEMP_DIR:-./workspace/temp}
-        target: /app/workspace/temp
-      - type: bind
-        source: ${DATA_DIR:-./data}
-        target: /app/data
-      - whisper_cache:/root/.cache/whisper
 
     depends_on:
       - waha
@@ -95,3 +93,5 @@ networks:
 volumes:
   waha_sessions:
   whisper_cache:
+  temp:
+  dados:
