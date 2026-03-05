@@ -21,6 +21,18 @@ from pathlib import Path
 # Localização padrão do arquivo do banco (pode ser sobrescrita via .env)
 DB_PATH = os.getenv("DB_PATH", str(Path(__file__).parent.parent / "data" / "acervo.duckdb"))
 
+# Pasta raiz de músicas — todas as subpastas são escaneadas na inicialização
+MUSICAS_DIR = os.getenv(
+    "MUSICAS_DIR",
+    str(Path(__file__).parent.parent / "workspace" / "musicas"),
+)
+
+# Pasta da fila (excluída do índice — conteúdo temporário)
+_FILA_ZARA_DIR = os.getenv(
+    "FILA_ZARA_DIR",
+    str(Path(__file__).parent.parent / "workspace" / "fila_zara"),
+)
+
 
 def _get_connection() -> duckdb.DuckDBPyConnection:
     """Abre (ou cria) o arquivo do banco e retorna a conexão."""
@@ -180,6 +192,69 @@ def registrar_pedido(numero: str, artista: str, musica: str) -> None:
         """, [numero, artista.strip(), musica.strip(), datetime.now()])
         con.commit()
         print(f"[DB] Pedido registrado: {numero} → '{musica}' - '{artista}'")
+    finally:
+        con.close()
+
+
+def indexar_biblioteca() -> int:
+    """
+    Escaneia MUSICAS_DIR recursivamente e indexa todos os .mp3 no DuckDB.
+
+    - Parseia o nome do arquivo no formato "Artista - Música.mp3".
+    - Ignora arquivos já indexados (por file_path) e a pasta fila_zara.
+    - Seguro para chamar no startup: só insere o que ainda não está no banco.
+
+    Retorna:
+        int : número de novos registros inseridos.
+    """
+    if not os.path.isdir(MUSICAS_DIR):
+        print(f"[DB] MUSICAS_DIR não encontrado, indexação ignorada: {MUSICAS_DIR}")
+        return 0
+
+    fila_abs = os.path.abspath(_FILA_ZARA_DIR)
+    con = _get_connection()
+    novos = 0
+
+    try:
+        for root, dirs, files in os.walk(MUSICAS_DIR):
+            # Pula a pasta fila_zara (arquivos temporários de pedidos)
+            if os.path.abspath(root).startswith(fila_abs):
+                dirs.clear()
+                continue
+
+            for file in files:
+                if not file.lower().endswith(".mp3"):
+                    continue
+
+                stem = Path(file).stem
+                if " - " not in stem:
+                    continue
+
+                artista, musica = stem.split(" - ", 1)
+                artista = artista.strip()
+                musica = musica.strip()
+                if not artista or not musica:
+                    continue
+
+                file_path = os.path.join(root, file)
+
+                existe = con.execute(
+                    "SELECT 1 FROM dim_musicas WHERE file_path = ?",
+                    [file_path],
+                ).fetchone()
+
+                if not existe:
+                    con.execute("""
+                        INSERT INTO dim_musicas (artista, musica, file_path, data_inclusao)
+                        VALUES (?, ?, ?, ?)
+                    """, [artista, musica, file_path, datetime.now()])
+                    novos += 1
+
+        if novos:
+            con.commit()
+
+        print(f"[DB] Biblioteca indexada: {novos} novos arquivos registrados.")
+        return novos
     finally:
         con.close()
 

@@ -58,27 +58,24 @@ services:
 
     environment:
       WAHA_URL: http://waha:3000
-      # Caminhos internos do container — sempre fixos
-      ACERVO_DIR: /app/workspace/acervo_limpo
+      # Caminhos internos do container — sempre fixos, derivados de MUSICAS_DIR
+      MUSICAS_DIR: /app/workspace/musicas
+      ACERVO_DIR: /app/workspace/musicas/acervo_limpo
+      FILA_ZARA_DIR: /app/workspace/musicas/fila_zara
       TEMP_DIR: /app/workspace/temp
       DATA_DIR: /app/data
       DB_PATH: /app/data/acervo.duckdb
-      # fila_zara: único caminho que o ZaraRadio (Windows) precisa acessar
-      FILA_ZARA_DIR: /app/workspace/fila_zara
 
     volumes:
       # Named volumes — Docker gerencia internamente, sem caminho Windows
       - temp:/app/workspace/temp
       - dados:/app/data
       - whisper_cache:/root/.cache/whisper
-      # Bind mounts — pastas acessíveis pelo Windows
-      # Defina no .env com barras normais. Exemplo: C:/Radio/acervo_limpo
+      # Bind mount — pasta raiz de músicas acessível pelo Windows e ZaraRadio
+      # Defina MUSICAS_DIR no .env com barras normais. Exemplo: C:/LUZ FM/AR/MUSICAS
       - type: bind
-        source: ${ACERVO_DIR:-./workspace/acervo_limpo}
-        target: /app/workspace/acervo_limpo
-      - type: bind
-        source: ${FILA_ZARA_DIR:-./workspace/fila_zara}
-        target: /app/workspace/fila_zara
+        source: ${MUSICAS_DIR:-./workspace/musicas}
+        target: /app/workspace/musicas
 
     depends_on:
       - waha

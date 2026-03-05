@@ -62,8 +62,14 @@ _mensagens_processadas: set[str] = set()
 @app.on_event("startup")
 async def startup() -> None:
     database.init_db()
+    asyncio.create_task(_indexar_biblioteca_async())
     asyncio.create_task(_configurar_webhook_com_retry())
     print("[SERVER] Pronto. Aguardando mensagens do WhatsApp...")
+
+
+async def _indexar_biblioteca_async() -> None:
+    """Indexa a biblioteca musical em background para não atrasar o startup."""
+    await asyncio.to_thread(database.indexar_biblioteca)
 
 
 async def _configurar_webhook_com_retry() -> None:
