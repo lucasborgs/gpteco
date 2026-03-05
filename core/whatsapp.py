@@ -23,6 +23,7 @@ import httpx
 WAHA_URL: str = os.getenv("WAHA_URL", "http://localhost:3001").rstrip("/")
 WAHA_API_KEY: str = os.getenv("WAHA_API_KEY", "")
 WAHA_SESSION: str = os.getenv("WAHA_SESSION", "default")
+WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", "http://servidor:8002/webhook")
 
 TEMP_DIR: str = os.getenv(
     "TEMP_DIR",
@@ -32,6 +33,33 @@ TEMP_DIR: str = os.getenv(
 
 def _headers() -> dict:
     return {"X-Api-Key": WAHA_API_KEY, "Content-Type": "application/json"}
+
+
+def configurar_webhook() -> bool:
+    """
+    Configura o webhook no WAHA para a sessão atual.
+    Chamado automaticamente no startup do servidor.
+    """
+    url = f"{WAHA_URL}/api/sessions/{WAHA_SESSION}"
+    payload = {
+        "config": {
+            "webhooks": [
+                {
+                    "url": WEBHOOK_URL,
+                    "events": ["message", "session.status"],
+                }
+            ]
+        }
+    }
+    try:
+        with httpx.Client(timeout=10) as client:
+            response = client.put(url, json=payload, headers=_headers())
+            response.raise_for_status()
+        print(f"[WHATSAPP] Webhook configurado: {WEBHOOK_URL}")
+        return True
+    except Exception as e:
+        print(f"[WHATSAPP] Falha ao configurar webhook: {e}")
+        return False
 
 
 def baixar_audio(payload: dict) -> str | None:

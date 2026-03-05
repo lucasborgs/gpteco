@@ -59,7 +59,21 @@ app = FastAPI(title="Agente Virtual Musical", version="1.0.0")
 @app.on_event("startup")
 async def startup() -> None:
     database.init_db()
+    asyncio.create_task(_configurar_webhook_com_retry())
     print("[SERVER] Pronto. Aguardando mensagens do WhatsApp...")
+
+
+async def _configurar_webhook_com_retry() -> None:
+    """Configura o webhook no WAHA com retries, aguardando o WAHA inicializar."""
+    for tentativa in range(1, 13):  # até ~2 minutos
+        await asyncio.sleep(10)
+        try:
+            sucesso = await asyncio.to_thread(whatsapp.configurar_webhook)
+            if sucesso:
+                return
+        except Exception as e:
+            print(f"[SERVER] Tentativa {tentativa}/12 de configurar webhook falhou: {e}")
+    print("[SERVER] AVISO: Webhook nao configurado automaticamente. Configure manualmente.")
 
 
 # ---------------------------------------------------------------------------
