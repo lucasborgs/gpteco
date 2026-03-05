@@ -58,6 +58,12 @@ services:
 
     environment:
       WAHA_URL: http://waha:3000
+      # Caminhos internos do container (fixos, independente do SO do cliente)
+      # Os env vars do .env são usados APENAS como source dos volumes abaixo.
+      ACERVO_DIR: /app/workspace/acervo_limpo
+      FILA_ZARA_DIR: /app/workspace/fila_zara
+      TEMP_DIR: /app/workspace/temp
+      DATA_DIR: /app/data
 
     volumes:
       # Sem bind mount de código-fonte (cliente não tem o código)
