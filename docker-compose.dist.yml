@@ -20,6 +20,8 @@ services:
   waha:
     image: devlikeapro/waha:latest
     platform: linux/amd64
+    entrypoint: ["/entrypoint.sh"]   # bypassa o tini da imagem (incompatível com este sistema)
+    init: true                        # Docker provê seu próprio init (evita processos zumbi)
     container_name: waha
     restart: unless-stopped
     ports:
