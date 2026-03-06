@@ -65,6 +65,9 @@ services:
       # Sobrescreve WAHA_URL do .env para comunicação interna Docker
       # (porta interna 3000 do container waha, não a 3001 mapeada no host)
       WAHA_URL: http://waha:3000
+      # CURRENT_SONG_DIR do .env é o path Windows (usado como volume source acima).
+      # O container precisa ver o path interno fixo onde o volume foi montado.
+      CURRENT_SONG_DIR: /app/workspace/current_song
 
     volumes:
       # Código-fonte — bind mount: mudanças em .py requerem apenas restart
@@ -74,8 +77,11 @@ services:
       # Produção Windows: C:\Radio\... (conforme DB_PATH/ACERVO_DIR/etc. no .env)
       - ${ACERVO_DIR:-./workspace/acervo_limpo}:/app/workspace/acervo_limpo
       - ${FILA_ZARA_DIR:-./workspace/fila_zara}:/app/workspace/fila_zara
+      - ${QUEUE_DIR:-./workspace/queue_pedidos}:/app/workspace/queue_pedidos
       - ${TEMP_DIR:-./workspace/temp}:/app/workspace/temp
       - ${DATA_DIR:-./data}:/app/data
+      # Pasta onde o ZaraRadio grava CurrentSong.txt (ex: C:\Users\user)
+      - ${CURRENT_SONG_DIR:-./workspace/current_song}:/app/workspace/current_song
       # Modelo Whisper — volume nomeado para não baixar a cada rebuild
       - whisper_cache:/root/.cache/whisper
 

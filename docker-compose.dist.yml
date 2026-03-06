@@ -60,13 +60,16 @@ services:
 
     environment:
       WAHA_URL: http://waha:3000
-      # Caminhos internos do container — sempre fixos, derivados de MUSICAS_DIR
+      # Caminhos internos do container — sempre fixos
       MUSICAS_DIR: /app/workspace/musicas
       ACERVO_DIR: /app/workspace/musicas/acervo_limpo
       FILA_ZARA_DIR: /app/workspace/musicas/fila_zara
+      QUEUE_DIR: /app/workspace/musicas/queue_pedidos
       TEMP_DIR: /app/workspace/temp
       DATA_DIR: /app/data
       DB_PATH: /app/data/acervo.duckdb
+      # Pasta do CurrentSong.txt dentro do container (o host é montado via volume abaixo)
+      CURRENT_SONG_DIR: /app/workspace/current_song
 
     volumes:
       # Named volumes — Docker gerencia internamente, sem caminho Windows
@@ -78,6 +81,11 @@ services:
       - type: bind
         source: ${MUSICAS_DIR:-./workspace/musicas}
         target: /app/workspace/musicas
+      # Bind mount — pasta onde o ZaraRadio grava CurrentSong.txt
+      # Defina CURRENT_SONG_DIR no .env com o caminho Windows. Exemplo: C:/Users/user
+      - type: bind
+        source: ${CURRENT_SONG_DIR:-./workspace/current_song}
+        target: /app/workspace/current_song
 
     depends_on:
       - waha

@@ -46,7 +46,7 @@ load_dotenv()
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from core import database, whatsapp
+from core import database, queue_watcher, whatsapp
 from core.pipeline import processar_pedido
 
 app = FastAPI(title="Agente Virtual Musical", version="1.0.0")
@@ -62,6 +62,7 @@ _mensagens_processadas: set[str] = set()
 @app.on_event("startup")
 async def startup() -> None:
     database.init_db()
+    queue_watcher.start()
     asyncio.create_task(_indexar_biblioteca_async())
     asyncio.create_task(_configurar_webhook_com_retry())
     print("[SERVER] Pronto. Aguardando mensagens do WhatsApp...")

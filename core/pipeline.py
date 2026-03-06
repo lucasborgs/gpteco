@@ -31,18 +31,13 @@ import shutil
 import time
 from pathlib import Path
 
-from core import audio_mixer, database, downloader, intelligence, stt
+from core import audio_mixer, database, downloader, intelligence, queue_watcher, stt
 
 # Diretórios (configuráveis via .env)
 TEMP_DIR: str = os.getenv(
     "TEMP_DIR",
     str(Path(__file__).parent.parent / "workspace" / "temp"),
 )
-FILA_ZARA_DIR: str = os.getenv(
-    "FILA_ZARA_DIR",
-    str(Path(__file__).parent.parent / "workspace" / "fila_zara"),
-)
-
 # Define como "true" no .env para desativar o cooldown durante testes
 DISABLE_COOLDOWN: bool = os.getenv("DISABLE_COOLDOWN", "false").lower() == "true"
 
@@ -83,7 +78,6 @@ def processar_pedido(
         return _resultado(False, None, _MSG_ERRO)
 
     os.makedirs(TEMP_DIR, exist_ok=True)
-    os.makedirs(FILA_ZARA_DIR, exist_ok=True)
 
     _log_separador(f"Novo pedido de {numero}")
 
@@ -143,16 +137,18 @@ def processar_pedido(
             # A música do acervo vai direto para a fila sem overlay.
             path_entrega = file_path
 
-        # --- Etapa 6: Entrega ao ZaraRadio ---
+        # --- Etapa 6: Entrega ao ZaraRadio (via fila gerenciada) ---
         _log_etapa(6, "Entrega ao ZaraRadio")
-        path_final = str(Path(FILA_ZARA_DIR) / nome_saida)
 
         if path_ogg:
-            # Arquivo mixado temporário → move para a fila
-            shutil.move(path_entrega, path_final)
+            # Arquivo mixado: já está em TEMP_DIR com o nome correto
+            path_para_enfileirar = path_entrega
         else:
-            # Música limpa do acervo → copia para a fila (preserva original no acervo)
-            shutil.copy2(path_entrega, path_final)
+            # Música do acervo: copia para TEMP para preservar o original
+            path_para_enfileirar = str(Path(TEMP_DIR) / nome_saida)
+            shutil.copy2(path_entrega, path_para_enfileirar)
+
+        path_final = queue_watcher.enfileirar(path_para_enfileirar)
 
         # --- Etapa 7: Registro do pedido (ativa cooldown) ---
         database.registrar_pedido(numero, metadados.artista, metadados.musica)
