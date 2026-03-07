@@ -28,40 +28,40 @@ Tudo isso sem intervenção humana.
 
 ---
 
-## Acao
+## Ação
 
 ### Pipeline de 7 Etapas
 
 ```mermaid
 flowchart TD
-    A([WhatsApp\nOuvinte]) -->|voz .ogg ou texto| B[WAHA\nWhatsApp API]
-    B -->|webhook POST| C[FastAPI\nserver.py]
+    A([WhatsApp Ouvinte]) -->|voz .ogg ou texto| B[WAHA/WhatsApp API]
+    B -->|webhook POST| C[FastAPI]
 
     C --> D{Tipo?}
-    D -->|audio| E[STT\nWhisper local]
+    D -->|audio| E[Whisper (transcrição)]
     D -->|texto| F[Bypass STT]
     E --> G
     F --> G
 
     G[LLM\nOpenAI / Gemini\nExtracao de metadados]
-    G --> H{Validacoes}
-    H -->|nao eh pedido musical| Z1([Silencio\nsem resposta])
-    H -->|inapropriado| Z2([Resposta\nautomatica])
-    H -->|nao eh flashback| Z3([Sugestao\nde repertorio])
+    G --> H{Validações}
+    H -->|não é pedido musical| Z1([Sem resposta])
+    H -->|inapropriado| Z2([Resposta automatica])
+    H -->|nao eh flashback| Z3([Sugestão de repertório])
     H -->|aprovado| I
 
-    I[DuckDB\nBusca no acervo local]
-    I -->|ja existe| J
-    I -->|nao existe| K[yt-dlp\nDownload YouTube]
-    K -->|ffmpeg\nnormalizacao -14 LUFS\ncorte de silencio| J
+    I[Busca no acervo local]
+    I -->|já existe| J
+    I -->|não existe| K[Download YouTube]
+    K -->|ffmpeg\nnormalização - corte de silêncio| J
 
-    J{Entrada\nde voz?}
-    J -->|sim| L[pydub Mixer\noverlay + fade_in\n3s antes do fim da voz]
-    J -->|nao| M
+    J{Entrada de voz?}
+    J -->|sim| L[pydub Mixer\noverlay + fade_in 3s antes do fim da voz]
+    J -->|não| M
 
-    L --> M[fila_zara/\nZaraRadio\ntoca automaticamente]
-    M --> N[DuckDB\nRegistra pedido\ncooldown 6h]
-    N --> O([WhatsApp\nConfirmacao\nao ouvinte])
+    L --> M[fila_zara/ZaraRadio toca automaticamente]
+    M --> N[Registra pedido]
+    N --> O([WhatsApp (confirmação não ouvinte)])
 
     style A fill:#25D366,color:#fff
     style B fill:#128C7E,color:#fff
@@ -73,7 +73,7 @@ flowchart TD
     style O fill:#25D366,color:#fff
 ```
 
-### Arquitetura de Servicos
+### Arquitetura de Serviços
 
 ```mermaid
 graph LR
