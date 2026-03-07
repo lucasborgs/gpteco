@@ -73,40 +73,6 @@ flowchart TD
     style O fill:#25D366,color:#fff
 ```
 
-### Arquitetura de Serviços
-
-```mermaid
-graph LR
-    subgraph Docker["Docker Compose"]
-        WAHA["WAHA\n:3001\nWhatsApp NOWEB engine"]
-        API["FastAPI\n:8002\nPipeline Python"]
-        WAHA -->|webhook interno| API
-    end
-
-    subgraph Windows["Host Windows / ZaraRadio"]
-        ZARA["ZaraRadio\nmonitor de pasta"]
-        ACERVO["acervo_limpo/\nMP3s processados"]
-        FILA["fila_zara/\nautomaticamente tocado"]
-    end
-
-    subgraph External["Servicos Externos"]
-        YT["YouTube\nyt-dlp"]
-        LLM["OpenAI / Gemini\nanalise de pedido"]
-        WPP["WhatsApp\nouvintes"]
-    end
-
-    WPP --> WAHA
-    API --> LLM
-    API --> YT
-    API --> ACERVO
-    API --> FILA
-    FILA --> ZARA
-
-    style Docker fill:#E3F2FD
-    style Windows fill:#FFF3E0
-    style External fill:#F3E5F5
-```
-
 ---
 
 ## Resultados
