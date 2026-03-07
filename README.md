@@ -38,30 +38,30 @@ flowchart TD
     B -->|webhook POST| C[FastAPI]
 
     C --> D{Tipo?}
-    D -->|audio| E[Whisper (transcrição)]
+    D -->|audio| E["Whisper - transcricao"]
     D -->|texto| F[Bypass STT]
+
+    G["LLM - OpenAI / Gemini - Extracao de metadados"]
     E --> G
     F --> G
-
-    G[LLM\nOpenAI / Gemini\nExtracao de metadados]
-    G --> H{Validações}
-    H -->|não é pedido musical| Z1([Sem resposta])
+    G --> H{Validacoes}
+    H -->|nao e pedido musical| Z1([Sem resposta])
     H -->|inapropriado| Z2([Resposta automatica])
-    H -->|nao eh flashback| Z3([Sugestão de repertório])
+    H -->|nao e flashback| Z3([Sugestao de repertorio])
     H -->|aprovado| I
 
     I[Busca no acervo local]
-    I -->|já existe| J
-    I -->|não existe| K[Download YouTube]
-    K -->|ffmpeg\nnormalização - corte de silêncio| J
+    I -->|ja existe| J
+    I -->|nao existe| K[Download YouTube]
+    K -->|ffmpeg: normalizacao e corte de silencio| J
 
     J{Entrada de voz?}
-    J -->|sim| L[pydub Mixer\noverlay + fade_in 3s antes do fim da voz]
-    J -->|não| M
+    J -->|sim| L["pydub Mixer - overlay + fade_in"]
+    J -->|nao| M
 
-    L --> M[fila_zara/ZaraRadio toca automaticamente]
+    L --> M["fila_zara - ZaraRadio toca automaticamente"]
     M --> N[Registra pedido]
-    N --> O([WhatsApp (confirmação não ouvinte)])
+    N --> O([WhatsApp - confirmacao ao ouvinte])
 
     style A fill:#25D366,color:#fff
     style B fill:#128C7E,color:#fff
