@@ -23,3 +23,7 @@ httpx
 
 # === Utilitários ===
 python-dotenv
+
+# === Dashboard de analytics ===
+gradio
+matplotlib
