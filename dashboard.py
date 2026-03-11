@@ -221,11 +221,7 @@ def atualizar_tudo():
 # Interface Gradio
 # ---------------------------------------------------------------------------
 
-with gr.Blocks(
-    title="Dashboard — Agente Virtual Musical",
-    theme=gr.themes.Soft(primary_hue="blue"),
-    css=".gradio-container { max-width: 1100px; margin: auto; }",
-) as demo:
+with gr.Blocks(title="Dashboard — Agente Virtual Musical") as demo:
 
     gr.Markdown("# Agente Virtual Musical — Dashboard Analytics")
     gr.Markdown("Dados em tempo real do banco DuckDB local.")
@@ -283,5 +279,4 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=int(os.getenv("DASHBOARD_PORT", "7860")),
-        show_api=False,
     )
