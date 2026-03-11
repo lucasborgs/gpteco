@@ -31,7 +31,7 @@ import shutil
 import time
 from pathlib import Path
 
-from core import audio_mixer, database, downloader, intelligence, queue_watcher, stt
+from core import audio_mixer, config_radio, database, downloader, intelligence, queue_watcher, stt
 
 # Diretórios (configuráveis via .env)
 TEMP_DIR: str = os.getenv(
@@ -41,13 +41,8 @@ TEMP_DIR: str = os.getenv(
 # Define como "true" no .env para desativar o cooldown durante testes
 DISABLE_COOLDOWN: bool = os.getenv("DISABLE_COOLDOWN", "false").lower() == "true"
 
-# Mensagens de resposta ao ouvinte
-_MSG_SUCESSO       = "Obrigado pela sua indicação! {artista} - {musica} já está na fila."
-_MSG_COOLDOWN      = "Você já fez um pedido nas últimas 6 horas. Tente novamente mais tarde!"
-_MSG_INAPROPRIADO  = "Não foi possível atender esse pedido. Mande uma mensagem respeitosa!"
-_MSG_NAO_FLASHBACK = "'{musica}' não está no repertório flashback da rádio. Que tal outro clássico?"
-_MSG_NAO_ID        = "Não consegui identificar a música. Pode repetir o pedido?"
-_MSG_ERRO          = "Ocorreu um erro ao processar seu pedido. Tente novamente em breve."
+# Mensagem de erro técnico — não é configurável (não é mensagem da rádio)
+_MSG_ERRO = "Ocorreu um erro ao processar seu pedido. Tente novamente em breve."
 
 
 def processar_pedido(
@@ -84,7 +79,8 @@ def processar_pedido(
     # --- Regra 4: Rate limiting por número ---
     _log_etapa(0, "Verificação de cooldown")
     if not DISABLE_COOLDOWN and not database.verificar_cooldown(numero):
-        return _resultado(False, None, _MSG_COOLDOWN)
+        database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="cooldown")
+        return _resultado(False, None, config_radio.get_config("msg_cooldown"))
 
     try:
         # --- Etapa 1: Transcrição STT (somente se for áudio) ---
@@ -105,13 +101,16 @@ def processar_pedido(
             return _resultado(False, None, None)
 
         if not metadados.musica or not metadados.artista:
-            return _resultado(False, None, _MSG_NAO_ID)
+            database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado")
+            return _resultado(False, None, config_radio.get_config("msg_nao_id"))
 
         if not metadados.is_apropriado:
-            return _resultado(False, None, _MSG_INAPROPRIADO)
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="inapropriado")
+            return _resultado(False, None, config_radio.get_config("msg_inapropriado"))
 
         if not metadados.is_flashback:
-            msg = _MSG_NAO_FLASHBACK.format(musica=metadados.musica)
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="nao_flashback")
+            msg = config_radio.get_config("msg_nao_repertorio").format(musica=metadados.musica)
             return _resultado(False, None, msg)
 
         # --- Etapa 3: Busca no Acervo Local (DuckDB) ---
@@ -153,12 +152,18 @@ def processar_pedido(
         # --- Etapa 7: Registro do pedido (ativa cooldown) ---
         database.registrar_pedido(numero, metadados.artista, metadados.musica)
 
-        msg = _MSG_SUCESSO.format(artista=metadados.artista, musica=metadados.musica)
+        msg = config_radio.get_config("msg_sucesso").format(artista=metadados.artista, musica=metadados.musica)
         _log_separador(f"Concluído: {nome_saida}")
         return _resultado(True, path_final, msg)
 
     except Exception as e:
         print(f"[PIPELINE] Erro tecnico: {e}")
+        try:
+            artista = metadados.artista if "metadados" in dir() else ""
+            musica  = metadados.musica  if "metadados" in dir() else ""
+            database.registrar_pedido(numero, artista, musica, sucesso=False, motivo_rejeicao="erro_tecnico")
+        except Exception:
+            pass
         return _resultado(False, None, _MSG_ERRO)
 
 
