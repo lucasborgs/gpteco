@@ -27,3 +27,5 @@ python-dotenv
 # === Dashboard de analytics ===
 gradio
 matplotlib
+squarify
+numpy

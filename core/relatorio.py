@@ -187,6 +187,129 @@ def ouvintes_engajados(limit: int = 10) -> list[dict]:
         con.close()
 
 
+def heatmap_pedidos() -> list[dict]:
+    """
+    Volume de pedidos por hora e dia da semana (histórico completo).
+    Retorna lista de dicts: {hora, dia_semana, pedidos}
+    """
+    con = database._get_connection()
+    try:
+        rows = con.execute("""
+            SELECT hour(timestamp_pedido)              AS hora,
+                   (dayofweek(timestamp_pedido) + 6) % 7 AS dia_semana,
+                   COUNT(*) AS pedidos
+            FROM dim_pedidos
+            GROUP BY hora, dia_semana
+        """).fetchall()
+        return [{"hora": r[0], "dia_semana": r[1], "pedidos": r[2]} for r in rows]
+    finally:
+        con.close()
+
+
+def tendencia_musicas(limit: int = 5) -> list[dict]:
+    """
+    Top músicas desta semana com indicador de tendência vs. semana anterior.
+    Retorna lista de dicts: {posicao, artista, musica, pedidos, tendencia}
+    onde tendencia é: "up", "down", "same", "new"
+    """
+    con = database._get_connection()
+    try:
+        agora = datetime.now()
+        inicio_semana      = agora - timedelta(days=7)
+        inicio_sem_anterior = agora - timedelta(days=14)
+
+        rows_atual = con.execute("""
+            SELECT artista, musica, COUNT(*) AS pedidos
+            FROM dim_pedidos
+            WHERE timestamp_pedido >= ? AND sucesso = TRUE AND artista != ''
+            GROUP BY artista, musica
+            ORDER BY pedidos DESC
+            LIMIT ?
+        """, [inicio_semana, limit]).fetchall()
+
+        rows_anterior = con.execute("""
+            SELECT artista, musica, COUNT(*) AS pedidos
+            FROM dim_pedidos
+            WHERE timestamp_pedido >= ? AND timestamp_pedido < ?
+              AND sucesso = TRUE AND artista != ''
+            GROUP BY artista, musica
+            ORDER BY pedidos DESC
+        """, [inicio_sem_anterior, inicio_semana]).fetchall()
+
+        ranking_anterior = {
+            f"{artista}|{musica}": pos
+            for pos, (artista, musica, _) in enumerate(rows_anterior, 1)
+        }
+
+        resultado = []
+        for pos, (artista, musica, pedidos) in enumerate(rows_atual, 1):
+            chave = f"{artista}|{musica}"
+            pos_ant = ranking_anterior.get(chave)
+            if pos_ant is None:
+                tendencia = "new"
+            elif pos < pos_ant:
+                tendencia = "up"
+            elif pos > pos_ant:
+                tendencia = "down"
+            else:
+                tendencia = "same"
+            resultado.append({
+                "posicao": pos, "artista": artista,
+                "musica": musica, "pedidos": pedidos,
+                "tendencia": tendencia,
+            })
+        return resultado
+    finally:
+        con.close()
+
+
+def breakdown_ddd() -> list[dict]:
+    """
+    Volume de pedidos por DDD (código de área do ouvinte).
+    Retorna lista de dicts: {ddd, pedidos}, ordenado por pedidos desc.
+    """
+    con = database._get_connection()
+    try:
+        rows = con.execute("""
+            SELECT numero, COUNT(*) AS pedidos
+            FROM dim_pedidos
+            GROUP BY numero
+        """).fetchall()
+
+        ddd_count: dict[str, int] = {}
+        for numero, pedidos in rows:
+            base = numero.split("@")[0]
+            ddd = base[2:4] if len(base) >= 12 and base.startswith("55") else "??"
+            ddd_count[ddd] = ddd_count.get(ddd, 0) + pedidos
+
+        return [
+            {"ddd": k, "pedidos": v}
+            for k, v in sorted(ddd_count.items(), key=lambda x: -x[1])
+        ]
+    finally:
+        con.close()
+
+
+def top_artistas(limit: int = 15) -> list[dict]:
+    """
+    Top artistas por volume de pedidos com sucesso (para treemap).
+    Retorna lista de dicts: {artista, pedidos}
+    """
+    con = database._get_connection()
+    try:
+        rows = con.execute("""
+            SELECT artista, COUNT(*) AS pedidos
+            FROM dim_pedidos
+            WHERE sucesso = TRUE AND artista != ''
+            GROUP BY artista
+            ORDER BY pedidos DESC
+            LIMIT ?
+        """, [limit]).fetchall()
+        return [{"artista": r[0], "pedidos": r[1]} for r in rows]
+    finally:
+        con.close()
+
+
 # ---------------------------------------------------------------------------
 # Relatório semanal formatado
 # ---------------------------------------------------------------------------
