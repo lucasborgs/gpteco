@@ -155,9 +155,16 @@ def _loop() -> None:
 # ---------------------------------------------------------------------------
 
 def _ler_current_song() -> str:
-    """Lê o conteúdo atual de CurrentSong.txt (tolerante a erros de I/O)."""
+    """Lê o conteúdo atual de CurrentSong.txt (tolerante a erros de I/O).
+
+    ZaraRadio (Windows) grava o arquivo em ANSI/CP1252.
+    Fallback para UTF-8 caso o arquivo esteja em outro encoding.
+    """
     try:
-        return Path(CURRENT_SONG_PATH).read_text(encoding="utf-8", errors="ignore").strip()
+        try:
+            return Path(CURRENT_SONG_PATH).read_text(encoding="cp1252").strip()
+        except UnicodeDecodeError:
+            return Path(CURRENT_SONG_PATH).read_text(encoding="utf-8", errors="ignore").strip()
     except Exception:
         return ""
 

@@ -23,7 +23,7 @@ VOZ_TARGET_DBFS: float = -14.0
 
 # Janela de entrada da música antes do fim da voz, em ms.
 # A música sobe de silêncio até volume cheio nesse período.
-JANELA_ENTRADA_MS: int = 5_000
+JANELA_ENTRADA_MS: int = 3_000
 
 # Formato de saída unificado — deve coincidir com o que o downloader.py produz.
 # Voz do WhatsApp chega tipicamente em 48000 Hz mono; música do acervo em 44100 Hz estéreo.
