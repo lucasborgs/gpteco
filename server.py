@@ -44,12 +44,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from core import config_radio, database, queue_watcher, relatorio, whatsapp
 from core.pipeline import processar_pedido
 
 app = FastAPI(title="Agente Virtual Musical", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 # Cache de IDs de mensagens já processadas (evita duplicatas do WAHA NOWEB)
 _mensagens_processadas: set[str] = set()
@@ -161,20 +169,31 @@ async def put_config(request: Request):
 
 @app.get("/analytics")
 async def get_analytics():
-    """Retorna os dados analíticos da rádio."""
-    top_all, top_week, picos, taxa, ouvintes = await asyncio.gather(
+    """Retorna todos os dados analíticos da rádio para o dashboard."""
+    (
+        top_all, top_week, tendencia, picos, heatmap,
+        taxa, ouvintes, ddd, artistas,
+    ) = await asyncio.gather(
         asyncio.to_thread(lambda: relatorio.top_musicas_all_time(10)),
         asyncio.to_thread(relatorio.top_musicas_semana),
+        asyncio.to_thread(lambda: relatorio.tendencia_musicas(5)),
         asyncio.to_thread(relatorio.pico_por_dia_semana),
+        asyncio.to_thread(relatorio.heatmap_pedidos),
         asyncio.to_thread(relatorio.taxa_atendimento),
         asyncio.to_thread(relatorio.ouvintes_engajados),
+        asyncio.to_thread(relatorio.breakdown_ddd),
+        asyncio.to_thread(lambda: relatorio.top_artistas(15)),
     )
     return {
-        "top_musicas_all_time":  top_all,
-        "top_musicas_semana":    top_week,
-        "pico_por_dia_semana":   picos,
-        "taxa_atendimento":      taxa,
-        "ouvintes_engajados":    ouvintes,
+        "top_musicas_all_time": top_all,
+        "top_musicas_semana":   top_week,
+        "tendencia_musicas":    tendencia,
+        "pico_por_dia_semana":  picos,
+        "heatmap_pedidos":      heatmap,
+        "taxa_atendimento":     taxa,
+        "ouvintes_engajados":   ouvintes,
+        "breakdown_ddd":        ddd,
+        "top_artistas":         artistas,
     }
 
 
