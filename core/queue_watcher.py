@@ -96,6 +96,7 @@ def enfileirar(path_audio: str) -> str:
         if arquivo_atual is None:
             destino = str(Path(FILA_ZARA_DIR) / nome)
             shutil.move(path_audio, destino)
+            os.utime(destino, None)  # reseta mtime para agora — shutil.move preserva o mtime original
             print(f"[WATCHER] Fila vazia → promovido direto: {nome}")
             return destino
 
@@ -196,6 +197,7 @@ def _promover_proximo() -> str | None:
     nome = Path(proximo).name
     destino = str(Path(FILA_ZARA_DIR) / nome)
     shutil.move(proximo, destino)
+    os.utime(destino, None)  # reseta mtime para agora — shutil.move preserva o mtime original
     print(f"[WATCHER] Promovido para fila_zara: {nome}")
     return destino
 
