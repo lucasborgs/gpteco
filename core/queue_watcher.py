@@ -9,20 +9,28 @@ Problema resolvido:
     Este módulo resolve isso mantendo a lógica de fila externamente:
 
       1. Apenas UM arquivo existe em fila_zara/ de cada vez.
-      2. O ZaraRadio toca esse arquivo (modo aleatório é indiferente com 1 arquivo).
-      3. Detecta o fim da reprodução por tempo: compara a idade do arquivo em
-         fila_zara/ com sua duração (via ffprobe) + buffer de segurança.
+      2. O ZaraRadio toca esse arquivo quando chegar sua vez na playlist.
+      3. Detecta o fim da reprodução combinando CurrentSong.txt + tempo:
+         - CurrentSong.txt confirma o início real da reprodução.
+         - Timer contado desde esse início detecta o fim (duração + buffer).
+         - Se ZaraRadio muda de faixa antes do timer, a troca no .txt
+           dispara a remoção imediatamente.
       4. Remove o arquivo reproduzido e promove o próximo de queue_pedidos/.
 
-Detecção de reprodução:
-    O ZaraRadio monitora fila_zara/ e começa a tocar em poucos segundos após
-    o arquivo chegar. Portanto: idade_do_arquivo ≈ tempo_reproduzido.
-    Quando idade > duração + PLAYBACK_BUFFER_S, o pedido foi reproduzido.
+Detecção de reprodução (abordagem combinada):
+    Primário  — CurrentSong.txt: quando o stem do arquivo aparece no .txt,
+                a reprodução começou; playback_start é registrado.
+    Fallback  — Timer: se CurrentSong.txt não mudar após duração + buffer
+                (ZaraRadio em loop ou sem próxima faixa), força remoção.
+    Imediato  — Se o ZaraRadio mudar de faixa (qualquer mudança no .txt
+                enquanto em_reproducao=True e o arquivo some do conteúdo),
+                remove na hora sem esperar o timer.
 
 Configuração via .env:
-    QUEUE_DIR             — pasta da fila real (não monitorada pelo ZaraRadio)
-    FILA_ZARA_DIR         — pasta monitorada pelo ZaraRadio (sempre 0–1 arquivo)
-    WATCHER_POLL_INTERVAL — intervalo de polling em segundos (padrão: 2)
+    QUEUE_DIR               — pasta da fila real (não monitorada pelo ZaraRadio)
+    FILA_ZARA_DIR           — pasta monitorada pelo ZaraRadio (sempre 0–1 arquivo)
+    CURRENT_SONG_DIR        — pasta onde o ZaraRadio grava CurrentSong.txt
+    WATCHER_POLL_INTERVAL   — intervalo de polling em segundos (padrão: 2)
     WATCHER_PLAYBACK_BUFFER — segundos extras após fim estimado antes de remover (padrão: 30)
 """
 
@@ -48,6 +56,11 @@ FILA_ZARA_DIR: str = os.getenv(
     str(Path(__file__).parent.parent / "workspace" / "fila_zara"),
 )
 
+_CURRENT_SONG_DIR: str = os.getenv(
+    "CURRENT_SONG_DIR",
+    str(Path(__file__).parent.parent / "workspace" / "current_song"),
+)
+CURRENT_SONG_PATH: str = str(Path(_CURRENT_SONG_DIR) / "CurrentSong.txt")
 
 POLL_INTERVAL: int = int(os.getenv("WATCHER_POLL_INTERVAL", "2"))
 
@@ -76,6 +89,7 @@ def start() -> None:
     print("[WATCHER] Iniciado.")
     print(f"[WATCHER]   Queue       : {QUEUE_DIR}")
     print(f"[WATCHER]   Fila Zara   : {FILA_ZARA_DIR}")
+    print(f"[WATCHER]   CurrentSong : {CURRENT_SONG_PATH}")
     print(f"[WATCHER]   Polling     : {POLL_INTERVAL}s")
     print(f"[WATCHER]   Buffer      : {PLAYBACK_BUFFER_S}s")
 
@@ -84,7 +98,7 @@ def enfileirar(path_audio: str) -> str:
     """
     Recebe um arquivo processado pelo pipeline e o coloca na posição correta:
 
-    - Fila vazia  → move para fila_zara/ (reprodução imediata).
+    - Fila vazia  → move para fila_zara/ (reprodução na vez da playlist).
     - Fila ocupada → move para queue_pedidos/ (aguarda a vez).
 
     Retorna o path final onde o arquivo foi salvo.
@@ -96,7 +110,6 @@ def enfileirar(path_audio: str) -> str:
         if arquivo_atual is None:
             destino = str(Path(FILA_ZARA_DIR) / nome)
             shutil.move(path_audio, destino)
-            os.utime(destino, None)  # reseta mtime para agora — shutil.move preserva o mtime original
             print(f"[WATCHER] Fila vazia → promovido direto: {nome}")
             return destino
 
@@ -112,44 +125,74 @@ def enfileirar(path_audio: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _loop() -> None:
-    # Cache de duração por path para evitar múltiplas chamadas ao ffprobe
+    prev_song = _ler_current_song()
+    em_reproducao = False   # True quando o arquivo está sendo tocado
+    playback_start: float = 0.0
     _duracao_cache: dict[str, float] = {}
 
     while True:
         time.sleep(POLL_INTERVAL)
 
         with _lock:
+            current_song = _ler_current_song()
             arquivo_fila = _arquivo_em_fila()
 
+            # Sem arquivo na fila: tenta promover o próximo
             if arquivo_fila is None:
                 _duracao_cache.clear()
+                em_reproducao = False
+                playback_start = 0.0
                 _promover_proximo()
+                prev_song = current_song
                 continue
 
-            # Obtém (ou lê do cache) a duração do arquivo atual
+            # Cache de duração — lido uma única vez por arquivo
             if arquivo_fila not in _duracao_cache:
                 d = _get_duracao_segundos(arquivo_fila)
                 if d is not None:
                     _duracao_cache[arquivo_fila] = d
 
             duracao_s = _duracao_cache.get(arquivo_fila)
-            if duracao_s is None:
-                # Sem duração não conseguimos estimar — aguarda próximo ciclo
-                continue
 
-            # Tempo que o arquivo já está em fila_zara.
-            # O ZaraRadio detecta o arquivo e começa a tocar em poucos segundos após a chegada.
-            # Portanto: idade_do_arquivo ≈ tempo_reproduzido + pequeno delay de pick-up.
-            idade_s = time.time() - os.path.getmtime(arquivo_fila)
+            # --- Detecção primária: CurrentSong.txt mudou ---
+            if current_song != prev_song:
+                aparecia_antes = _nome_em_conteudo(arquivo_fila, prev_song)
+                aparece_agora  = _nome_em_conteudo(arquivo_fila, current_song)
 
-            if idade_s > duracao_s + PLAYBACK_BUFFER_S:
-                print(
-                    f"[WATCHER] Reprodução concluída ({idade_s:.0f}s no disco > "
-                    f"{duracao_s:.0f}s duração + {PLAYBACK_BUFFER_S}s buffer) → removendo."
-                )
-                _duracao_cache.pop(arquivo_fila, None)
-                _deletar(arquivo_fila)
-                _promover_proximo()
+                if not em_reproducao and aparece_agora:
+                    # Arquivo entrou no CurrentSong.txt → reprodução iniciou
+                    em_reproducao = True
+                    playback_start = time.time()
+                    print(f"[WATCHER] Reprodução iniciada: {Path(arquivo_fila).name}")
+
+                if em_reproducao and not aparece_agora:
+                    # ZaraRadio mudou de faixa → arquivo saiu do CurrentSong.txt
+                    print(f"[WATCHER] Troca de faixa detectada → removendo.")
+                    _duracao_cache.pop(arquivo_fila, None)
+                    _deletar(arquivo_fila)
+                    em_reproducao = False
+                    playback_start = 0.0
+                    _promover_proximo()
+                    prev_song = current_song
+                    continue
+
+                prev_song = current_song
+
+            # --- Detecção fallback: timer desde o início da reprodução ---
+            # Cobre o caso em que ZaraRadio termina sem próxima faixa e
+            # não atualiza o CurrentSong.txt.
+            if em_reproducao and duracao_s is not None:
+                elapsed = time.time() - playback_start
+                if elapsed > duracao_s + PLAYBACK_BUFFER_S:
+                    print(
+                        f"[WATCHER] Timer expirado ({elapsed:.0f}s > "
+                        f"{duracao_s:.0f}s + {PLAYBACK_BUFFER_S}s) → removendo."
+                    )
+                    _duracao_cache.pop(arquivo_fila, None)
+                    _deletar(arquivo_fila)
+                    em_reproducao = False
+                    playback_start = 0.0
+                    _promover_proximo()
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +212,34 @@ def _get_duracao_segundos(path: str) -> float | None:
         print(f"[WATCHER] Não foi possível obter duração de {path}: {e}")
         return None
 
+
+def _ler_current_song() -> str:
+    """Lê o conteúdo atual de CurrentSong.txt (tolerante a erros de I/O).
+
+    ZaraRadio (Windows) grava o arquivo em ANSI/CP1252.
+    Fallback para UTF-8 caso o arquivo esteja em outro encoding.
+    """
+    try:
+        try:
+            return Path(CURRENT_SONG_PATH).read_text(encoding="cp1252").strip()
+        except UnicodeDecodeError:
+            return Path(CURRENT_SONG_PATH).read_text(encoding="utf-8", errors="ignore").strip()
+    except Exception:
+        return ""
+
+
+def _nome_em_conteudo(path_arquivo: str, conteudo: str) -> bool:
+    """Verifica se o stem do arquivo aparece no conteúdo do CurrentSong.txt.
+
+    O ZaraRadio grava o stem do arquivo (nome sem extensão) no CurrentSong.txt.
+    Ex: arquivo "1773516299_Pixies - Where Is My Mind_.mp3"
+        CurrentSong.txt: "1773516299_Pixies - Where Is My Mind_"
+    """
+    if not conteudo or not path_arquivo:
+        return False
+    stem  = Path(path_arquivo).stem.lower()
+    lower = conteudo.lower()
+    return stem in lower
 
 
 def _arquivo_em_fila() -> str | None:
@@ -197,10 +268,8 @@ def _promover_proximo() -> str | None:
     nome = Path(proximo).name
     destino = str(Path(FILA_ZARA_DIR) / nome)
     shutil.move(proximo, destino)
-    os.utime(destino, None)  # reseta mtime para agora — shutil.move preserva o mtime original
     print(f"[WATCHER] Promovido para fila_zara: {nome}")
     return destino
-
 
 
 def _deletar(path: str) -> None:
