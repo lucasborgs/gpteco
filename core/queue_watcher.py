@@ -273,11 +273,19 @@ def _promover_proximo() -> str | None:
 
 
 def _deletar(path: str) -> None:
-    try:
-        os.remove(path)
-        print(f"[WATCHER] Removido após reprodução: {Path(path).name}")
-    except Exception as e:
-        print(f"[WATCHER] Erro ao remover {path}: {e}")
+    """Remove o arquivo da fila_zara com retry para o caso de o ZaraRadio ainda ter o handle aberto."""
+    nome = Path(path).name
+    for tentativa in range(1, 6):
+        try:
+            os.remove(path)
+            print(f"[WATCHER] Removido após reprodução: {nome}")
+            return
+        except OSError as e:
+            if tentativa < 5:
+                print(f"[WATCHER] Arquivo ocupado, tentativa {tentativa}/5 — aguardando 2s ({e})")
+                time.sleep(2)
+            else:
+                print(f"[WATCHER] Erro ao remover {nome} após 5 tentativas: {e}")
 
 
 def _equilibrar_fila() -> None:
