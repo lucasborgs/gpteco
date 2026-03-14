@@ -193,13 +193,28 @@ def _promover_proximo() -> str | None:
 
 
 def _nome_em_conteudo(path_arquivo: str, conteudo: str) -> bool:
-    """Verifica se o nome (ou stem) do arquivo aparece no conteúdo do CurrentSong.txt."""
+    """Verifica se o nome (ou stem) do arquivo aparece no conteúdo do CurrentSong.txt.
+
+    Para pedidos via texto, o arquivo em fila_zara tem prefixo de timestamp
+    (ex: "1741234567_Artista - Musica.mp3"), mas o ZaraRadio lê os ID3 tags do
+    arquivo original e grava apenas "Artista - Musica" no CurrentSong.txt.
+    Por isso, além do nome/stem completo, também testamos a parte sem o prefixo.
+    """
     if not conteudo or not path_arquivo:
         return False
     nome  = Path(path_arquivo).name.lower()
     stem  = Path(path_arquivo).stem.lower()
     lower = conteudo.lower()
-    return nome in lower or stem in lower
+
+    if nome in lower or stem in lower:
+        return True
+
+    # Remove prefixo numérico de timestamp (ex: "1741234567_") e testa o restante.
+    partes = stem.split("_", 1)
+    if len(partes) == 2 and partes[0].isdigit():
+        return partes[1] in lower
+
+    return False
 
 
 def _deletar(path: str) -> None:
