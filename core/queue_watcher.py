@@ -10,20 +10,20 @@ Problema resolvido:
 
       1. Apenas UM arquivo existe em fila_zara/ de cada vez.
       2. O ZaraRadio toca esse arquivo (modo aleatório é indiferente com 1 arquivo).
-      3. Detecta o fim da reprodução via CurrentSong.txt (atualizado pelo ZaraRadio
-         a cada troca de faixa).
+      3. Detecta o fim da reprodução por tempo: compara a idade do arquivo em
+         fila_zara/ com sua duração (via ffprobe) + buffer de segurança.
       4. Remove o arquivo reproduzido e promove o próximo de queue_pedidos/.
 
 Detecção de reprodução:
-    O watcher compara o conteúdo anterior com o atual do CurrentSong.txt.
-    Se o nome do arquivo em fila_zara aparecia no conteúdo anterior e não
-    aparece mais, o pedido foi reproduzido e pode ser removido.
+    O ZaraRadio monitora fila_zara/ e começa a tocar em poucos segundos após
+    o arquivo chegar. Portanto: idade_do_arquivo ≈ tempo_reproduzido.
+    Quando idade > duração + PLAYBACK_BUFFER_S, o pedido foi reproduzido.
 
 Configuração via .env:
-    QUEUE_DIR          — pasta da fila real (não monitorada pelo ZaraRadio)
-    FILA_ZARA_DIR      — pasta monitorada pelo ZaraRadio (sempre 0–1 arquivo)
-    CURRENT_SONG_DIR   — pasta onde o ZaraRadio grava CurrentSong.txt
+    QUEUE_DIR             — pasta da fila real (não monitorada pelo ZaraRadio)
+    FILA_ZARA_DIR         — pasta monitorada pelo ZaraRadio (sempre 0–1 arquivo)
     WATCHER_POLL_INTERVAL — intervalo de polling em segundos (padrão: 2)
+    WATCHER_PLAYBACK_BUFFER — segundos extras após fim estimado antes de remover (padrão: 30)
 """
 
 import json
@@ -48,13 +48,6 @@ FILA_ZARA_DIR: str = os.getenv(
     str(Path(__file__).parent.parent / "workspace" / "fila_zara"),
 )
 
-# Diretório onde o ZaraRadio grava CurrentSong.txt
-# No Windows: C:\Users\user  →  montado no container como /app/workspace/current_song
-_CURRENT_SONG_DIR: str = os.getenv(
-    "CURRENT_SONG_DIR",
-    str(Path(__file__).parent.parent / "workspace" / "current_song"),
-)
-CURRENT_SONG_PATH: str = str(Path(_CURRENT_SONG_DIR) / "CurrentSong.txt")
 
 POLL_INTERVAL: int = int(os.getenv("WATCHER_POLL_INTERVAL", "2"))
 
@@ -83,8 +76,8 @@ def start() -> None:
     print("[WATCHER] Iniciado.")
     print(f"[WATCHER]   Queue       : {QUEUE_DIR}")
     print(f"[WATCHER]   Fila Zara   : {FILA_ZARA_DIR}")
-    print(f"[WATCHER]   CurrentSong : {CURRENT_SONG_PATH}")
     print(f"[WATCHER]   Polling     : {POLL_INTERVAL}s")
+    print(f"[WATCHER]   Buffer      : {PLAYBACK_BUFFER_S}s")
 
 
 def enfileirar(path_audio: str) -> str:
@@ -118,68 +111,44 @@ def enfileirar(path_audio: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _loop() -> None:
-    prev_song = _ler_current_song()
-    em_reproducao = False  # True quando o arquivo da fila aparece no CurrentSong.txt
-    playback_start: float = 0.0
-    duracao_s: float | None = None
+    # Cache de duração por path para evitar múltiplas chamadas ao ffprobe
+    _duracao_cache: dict[str, float] = {}
 
     while True:
         time.sleep(POLL_INTERVAL)
 
         with _lock:
-            current_song = _ler_current_song()
             arquivo_fila = _arquivo_em_fila()
 
-            # Sem arquivo na fila: tenta promover o próximo
             if arquivo_fila is None:
-                if _promover_proximo():
-                    prev_song = current_song
-                    em_reproducao = False
-                    playback_start = 0.0
-                    duracao_s = None
-                continue
-
-            # Fallback por tempo: ZaraRadio pode fazer loop sem alterar CurrentSong.txt.
-            # Se já sabemos a duração e o tempo decorrido ultrapassou duração + buffer,
-            # forçamos a remoção mesmo sem mudança no CurrentSong.txt.
-            if em_reproducao and duracao_s is not None:
-                elapsed = time.time() - playback_start
-                if elapsed > duracao_s + PLAYBACK_BUFFER_S:
-                    print(
-                        f"[WATCHER] Timeout de reprodução ({elapsed:.0f}s > "
-                        f"{duracao_s:.0f}s + {PLAYBACK_BUFFER_S}s) → removendo."
-                    )
-                    _deletar(arquivo_fila)
-                    em_reproducao = False
-                    playback_start = 0.0
-                    duracao_s = None
-                    _promover_proximo()
-                    prev_song = current_song
-                    continue
-
-            # CurrentSong.txt não mudou: nada a fazer
-            if current_song == prev_song:
-                continue
-
-            # CurrentSong.txt mudou — verifica se nosso arquivo está envolvido
-            aparecia_antes = _nome_em_conteudo(arquivo_fila, prev_song)
-            aparece_agora  = _nome_em_conteudo(arquivo_fila, current_song)
-
-            if not em_reproducao and aparece_agora:
-                # Arquivo entrou no CurrentSong.txt → início da reprodução
-                em_reproducao = True
-                playback_start = time.time()
-                duracao_s = _get_duracao_segundos(arquivo_fila)
-
-            if em_reproducao and not aparece_agora:
-                # Arquivo saiu do CurrentSong.txt → foi reproduzido
-                _deletar(arquivo_fila)
-                em_reproducao = False
-                playback_start = 0.0
-                duracao_s = None
+                _duracao_cache.clear()
                 _promover_proximo()
+                continue
 
-            prev_song = current_song
+            # Obtém (ou lê do cache) a duração do arquivo atual
+            if arquivo_fila not in _duracao_cache:
+                d = _get_duracao_segundos(arquivo_fila)
+                if d is not None:
+                    _duracao_cache[arquivo_fila] = d
+
+            duracao_s = _duracao_cache.get(arquivo_fila)
+            if duracao_s is None:
+                # Sem duração não conseguimos estimar — aguarda próximo ciclo
+                continue
+
+            # Tempo que o arquivo já está em fila_zara.
+            # O ZaraRadio detecta o arquivo e começa a tocar em poucos segundos após a chegada.
+            # Portanto: idade_do_arquivo ≈ tempo_reproduzido + pequeno delay de pick-up.
+            idade_s = time.time() - os.path.getmtime(arquivo_fila)
+
+            if idade_s > duracao_s + PLAYBACK_BUFFER_S:
+                print(
+                    f"[WATCHER] Reprodução concluída ({idade_s:.0f}s no disco > "
+                    f"{duracao_s:.0f}s duração + {PLAYBACK_BUFFER_S}s buffer) → removendo."
+                )
+                _duracao_cache.pop(arquivo_fila, None)
+                _deletar(arquivo_fila)
+                _promover_proximo()
 
 
 # ---------------------------------------------------------------------------
@@ -199,20 +168,6 @@ def _get_duracao_segundos(path: str) -> float | None:
         print(f"[WATCHER] Não foi possível obter duração de {path}: {e}")
         return None
 
-
-def _ler_current_song() -> str:
-    """Lê o conteúdo atual de CurrentSong.txt (tolerante a erros de I/O).
-
-    ZaraRadio (Windows) grava o arquivo em ANSI/CP1252.
-    Fallback para UTF-8 caso o arquivo esteja em outro encoding.
-    """
-    try:
-        try:
-            return Path(CURRENT_SONG_PATH).read_text(encoding="cp1252").strip()
-        except UnicodeDecodeError:
-            return Path(CURRENT_SONG_PATH).read_text(encoding="utf-8", errors="ignore").strip()
-    except Exception:
-        return ""
 
 
 def _arquivo_em_fila() -> str | None:
@@ -244,30 +199,6 @@ def _promover_proximo() -> str | None:
     print(f"[WATCHER] Promovido para fila_zara: {nome}")
     return destino
 
-
-def _nome_em_conteudo(path_arquivo: str, conteudo: str) -> bool:
-    """Verifica se o nome (ou stem) do arquivo aparece no conteúdo do CurrentSong.txt.
-
-    Para pedidos via texto, o arquivo em fila_zara tem prefixo de timestamp
-    (ex: "1741234567_Artista - Musica.mp3"), mas o ZaraRadio lê os ID3 tags do
-    arquivo original e grava apenas "Artista - Musica" no CurrentSong.txt.
-    Por isso, além do nome/stem completo, também testamos a parte sem o prefixo.
-    """
-    if not conteudo or not path_arquivo:
-        return False
-    nome  = Path(path_arquivo).name.lower()
-    stem  = Path(path_arquivo).stem.lower()
-    lower = conteudo.lower()
-
-    if nome in lower or stem in lower:
-        return True
-
-    # Remove prefixo numérico de timestamp (ex: "1741234567_") e testa o restante.
-    partes = stem.split("_", 1)
-    if len(partes) == 2 and partes[0].isdigit():
-        return partes[1] in lower
-
-    return False
 
 
 def _deletar(path: str) -> None:
