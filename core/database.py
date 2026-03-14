@@ -5,12 +5,15 @@ Camada de persistência do acervo musical e controle de pedidos.
 Usa DuckDB como banco local embarcado (arquivo único, sem servidor).
 
 Tabelas:
-  dim_musicas : acervo de músicas baixadas
+  dim_musicas       : acervo de músicas baixadas
     - id, artista, musica, file_path, data_inclusao
 
-  dim_pedidos : histórico de pedidos por número de telefone
-    - id, numero, artista, musica, timestamp_pedido
-    - Usada para aplicar o rate limiting de 6 horas por número.
+  dim_pedidos       : histórico de todos os pedidos (aceitos e rejeitados)
+    - id, numero, artista, musica, timestamp_pedido, sucesso, motivo_rejeicao
+    - Usada para rate limiting (6h) e analytics.
+
+  dim_configuracoes : configurações da rádio (key-value)
+    - chave, valor
 """
 
 import duckdb
@@ -65,12 +68,37 @@ def init_db() -> None:
                 numero           VARCHAR   NOT NULL,
                 artista          VARCHAR,
                 musica           VARCHAR,
-                timestamp_pedido TIMESTAMP DEFAULT current_timestamp
+                timestamp_pedido TIMESTAMP DEFAULT current_timestamp,
+                sucesso          BOOLEAN   DEFAULT TRUE,
+                motivo_rejeicao  VARCHAR   DEFAULT NULL
+            );
+        """)
+
+        # Migração: adiciona colunas novas em bancos existentes (idempotente)
+        colunas = {
+            row[0]
+            for row in con.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'dim_pedidos'"
+            ).fetchall()
+        }
+        if "sucesso" not in colunas:
+            con.execute("ALTER TABLE dim_pedidos ADD COLUMN sucesso BOOLEAN DEFAULT TRUE")
+        if "motivo_rejeicao" not in colunas:
+            con.execute("ALTER TABLE dim_pedidos ADD COLUMN motivo_rejeicao VARCHAR DEFAULT NULL")
+
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS dim_configuracoes (
+                chave VARCHAR PRIMARY KEY,
+                valor TEXT NOT NULL
             );
         """)
 
         con.commit()
         print("[DB] Schema inicializado com sucesso.")
+
+        # Seed de configurações padrão (late import evita circular dependency)
+        from core import config_radio
+        config_radio.seed_defaults()
     finally:
         con.close()
 
@@ -156,6 +184,7 @@ def verificar_cooldown(numero: str, horas: int = 6) -> bool:
             SELECT max(timestamp_pedido)
             FROM dim_pedidos
             WHERE numero = ?
+              AND sucesso = TRUE
         """, [numero]).fetchone()
 
         if not resultado or resultado[0] is None:
@@ -174,24 +203,42 @@ def verificar_cooldown(numero: str, horas: int = 6) -> bool:
         con.close()
 
 
-def registrar_pedido(numero: str, artista: str, musica: str) -> None:
+def registrar_pedido(
+    numero: str,
+    artista: str,
+    musica: str,
+    sucesso: bool = True,
+    motivo_rejeicao: str | None = None,
+) -> None:
     """
-    Registra um pedido aceito em dim_pedidos.
-    Deve ser chamado somente após o pedido ser processado com sucesso.
+    Registra um pedido em dim_pedidos (aceito ou rejeitado).
 
     Args:
-        numero  : número de telefone do ouvinte (ex: "5511999999999").
-        artista : nome do artista da música pedida.
-        musica  : título da música pedida.
+        numero          : número de telefone do ouvinte.
+        artista         : nome do artista (pode ser "" se não identificado).
+        musica          : título da música (pode ser "" se não identificado).
+        sucesso         : True se o pedido foi processado com êxito.
+        motivo_rejeicao : motivo da rejeição, se houver
+                          ('cooldown' | 'inapropriado' | 'nao_flashback' |
+                           'nao_identificado' | 'erro_tecnico' | None).
     """
     con = _get_connection()
     try:
         con.execute("""
-            INSERT INTO dim_pedidos (numero, artista, musica, timestamp_pedido)
-            VALUES (?, ?, ?, ?)
-        """, [numero, artista.strip(), musica.strip(), datetime.now()])
+            INSERT INTO dim_pedidos
+                (numero, artista, musica, timestamp_pedido, sucesso, motivo_rejeicao)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, [
+            numero,
+            artista.strip() if artista else "",
+            musica.strip() if musica else "",
+            datetime.now(),
+            sucesso,
+            motivo_rejeicao,
+        ])
         con.commit()
-        print(f"[DB] Pedido registrado: {numero} → '{musica}' - '{artista}'")
+        status = "aceito" if sucesso else f"rejeitado ({motivo_rejeicao})"
+        print(f"[DB] Pedido {status}: {numero} → '{musica}' - '{artista}'")
     finally:
         con.close()
 

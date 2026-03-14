@@ -44,15 +44,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from core import database, queue_watcher, whatsapp
+from core import config_radio, database, queue_watcher, relatorio, whatsapp
 from core.pipeline import processar_pedido
 
 app = FastAPI(title="Agente Virtual Musical", version="1.0.0")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
+
 # Cache de IDs de mensagens já processadas (evita duplicatas do WAHA NOWEB)
 _mensagens_processadas: set[str] = set()
+
+# Número do dono da rádio para receber o relatório semanal
+NUMERO_DONO: str = os.getenv("NUMERO_DONO", "")
 
 
 # ---------------------------------------------------------------------------
@@ -65,12 +76,38 @@ async def startup() -> None:
     queue_watcher.start()
     asyncio.create_task(_indexar_biblioteca_async())
     asyncio.create_task(_configurar_webhook_com_retry())
+    if NUMERO_DONO:
+        asyncio.create_task(_loop_relatorio_semanal())
+        print(f"[SERVER] Relatorio semanal ativado para: {NUMERO_DONO}")
     print("[SERVER] Pronto. Aguardando mensagens do WhatsApp...")
 
 
 async def _indexar_biblioteca_async() -> None:
     """Indexa a biblioteca musical em background para não atrasar o startup."""
     await asyncio.to_thread(database.indexar_biblioteca)
+
+
+async def _loop_relatorio_semanal() -> None:
+    """Envia o relatório semanal toda segunda-feira às 09h."""
+    from datetime import datetime, timedelta
+    while True:
+        agora = datetime.now()
+        dias_ate_segunda = (7 - agora.weekday()) % 7
+        if dias_ate_segunda == 0 and agora.hour < 9:
+            proxima = agora.replace(hour=9, minute=0, second=0, microsecond=0)
+        else:
+            proxima = (agora + timedelta(days=max(dias_ate_segunda, 1))).replace(
+                hour=9, minute=0, second=0, microsecond=0
+            )
+        segundos = (proxima - agora).total_seconds()
+        print(f"[RELATORIO] Proximo relatorio em {segundos / 3600:.1f}h ({proxima.strftime('%d/%m %H:%M')})")
+        await asyncio.sleep(segundos)
+        try:
+            texto = await asyncio.to_thread(relatorio.formatar_relatorio_semanal)
+            await asyncio.to_thread(lambda: whatsapp.enviar_mensagem(NUMERO_DONO, texto))
+            print("[RELATORIO] Relatorio semanal enviado.")
+        except Exception as e:
+            print(f"[RELATORIO] Erro ao enviar relatorio: {e}")
 
 
 async def _configurar_webhook_com_retry() -> None:
@@ -93,6 +130,71 @@ async def _configurar_webhook_com_retry() -> None:
 @app.get("/")
 async def health():
     return {"status": "online", "servico": "Agente Virtual Musical"}
+
+
+# ---------------------------------------------------------------------------
+# Configuração da rádio
+# ---------------------------------------------------------------------------
+
+@app.get("/config")
+async def get_config():
+    """Retorna todas as configurações da rádio."""
+    return await asyncio.to_thread(config_radio.get_all_config)
+
+
+@app.put("/config")
+async def put_config(request: Request):
+    """
+    Atualiza uma ou mais configurações da rádio.
+
+    Body: JSON com chave → valor (ex: {"nome_radio": "Radio Classicos FM"})
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"status": "invalid_payload"}, status_code=400)
+
+    if not isinstance(body, dict):
+        return JSONResponse({"status": "body deve ser um objeto JSON"}, status_code=400)
+
+    await asyncio.to_thread(
+        lambda: [config_radio.set_config(str(k), str(v)) for k, v in body.items()]
+    )
+    return {"status": "updated", "keys": list(body.keys())}
+
+
+# ---------------------------------------------------------------------------
+# Analytics
+# ---------------------------------------------------------------------------
+
+@app.get("/analytics")
+async def get_analytics():
+    """Retorna todos os dados analíticos da rádio para o dashboard."""
+    (
+        top_all, top_week, tendencia, picos, heatmap,
+        taxa, ouvintes, ddd, artistas,
+    ) = await asyncio.gather(
+        asyncio.to_thread(lambda: relatorio.top_musicas_all_time(10)),
+        asyncio.to_thread(relatorio.top_musicas_semana),
+        asyncio.to_thread(lambda: relatorio.tendencia_musicas(5)),
+        asyncio.to_thread(relatorio.pico_por_dia_semana),
+        asyncio.to_thread(relatorio.heatmap_pedidos),
+        asyncio.to_thread(relatorio.taxa_atendimento),
+        asyncio.to_thread(relatorio.ouvintes_engajados),
+        asyncio.to_thread(relatorio.breakdown_ddd),
+        asyncio.to_thread(lambda: relatorio.top_artistas(15)),
+    )
+    return {
+        "top_musicas_all_time": top_all,
+        "top_musicas_semana":   top_week,
+        "tendencia_musicas":    tendencia,
+        "pico_por_dia_semana":  picos,
+        "heatmap_pedidos":      heatmap,
+        "taxa_atendimento":     taxa,
+        "ouvintes_engajados":   ouvintes,
+        "breakdown_ddd":        ddd,
+        "top_artistas":         artistas,
+    }
 
 
 # ---------------------------------------------------------------------------

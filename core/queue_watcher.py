@@ -26,8 +26,10 @@ Configuração via .env:
     WATCHER_POLL_INTERVAL — intervalo de polling em segundos (padrão: 2)
 """
 
+import json
 import os
 import shutil
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -55,6 +57,9 @@ _CURRENT_SONG_DIR: str = os.getenv(
 CURRENT_SONG_PATH: str = str(Path(_CURRENT_SONG_DIR) / "CurrentSong.txt")
 
 POLL_INTERVAL: int = int(os.getenv("WATCHER_POLL_INTERVAL", "2"))
+
+# Segundos extras de buffer após o fim estimado antes de forçar remoção
+PLAYBACK_BUFFER_S: int = int(os.getenv("WATCHER_PLAYBACK_BUFFER", "30"))
 
 # Lock protege fila_zara e queue_pedidos contra acesso simultâneo do watcher e do pipeline
 _lock = threading.Lock()
@@ -115,6 +120,8 @@ def enfileirar(path_audio: str) -> str:
 def _loop() -> None:
     prev_song = _ler_current_song()
     em_reproducao = False  # True quando o arquivo da fila aparece no CurrentSong.txt
+    playback_start: float = 0.0
+    duracao_s: float | None = None
 
     while True:
         time.sleep(POLL_INTERVAL)
@@ -128,7 +135,27 @@ def _loop() -> None:
                 if _promover_proximo():
                     prev_song = current_song
                     em_reproducao = False
+                    playback_start = 0.0
+                    duracao_s = None
                 continue
+
+            # Fallback por tempo: ZaraRadio pode fazer loop sem alterar CurrentSong.txt.
+            # Se já sabemos a duração e o tempo decorrido ultrapassou duração + buffer,
+            # forçamos a remoção mesmo sem mudança no CurrentSong.txt.
+            if em_reproducao and duracao_s is not None:
+                elapsed = time.time() - playback_start
+                if elapsed > duracao_s + PLAYBACK_BUFFER_S:
+                    print(
+                        f"[WATCHER] Timeout de reprodução ({elapsed:.0f}s > "
+                        f"{duracao_s:.0f}s + {PLAYBACK_BUFFER_S}s) → removendo."
+                    )
+                    _deletar(arquivo_fila)
+                    em_reproducao = False
+                    playback_start = 0.0
+                    duracao_s = None
+                    _promover_proximo()
+                    prev_song = current_song
+                    continue
 
             # CurrentSong.txt não mudou: nada a fazer
             if current_song == prev_song:
@@ -138,13 +165,18 @@ def _loop() -> None:
             aparecia_antes = _nome_em_conteudo(arquivo_fila, prev_song)
             aparece_agora  = _nome_em_conteudo(arquivo_fila, current_song)
 
-            if aparecia_antes:
+            if not em_reproducao and aparece_agora:
+                # Arquivo entrou no CurrentSong.txt → início da reprodução
                 em_reproducao = True
+                playback_start = time.time()
+                duracao_s = _get_duracao_segundos(arquivo_fila)
 
             if em_reproducao and not aparece_agora:
                 # Arquivo saiu do CurrentSong.txt → foi reproduzido
                 _deletar(arquivo_fila)
                 em_reproducao = False
+                playback_start = 0.0
+                duracao_s = None
                 _promover_proximo()
 
             prev_song = current_song
@@ -154,10 +186,31 @@ def _loop() -> None:
 # Helpers internos
 # ---------------------------------------------------------------------------
 
-def _ler_current_song() -> str:
-    """Lê o conteúdo atual de CurrentSong.txt (tolerante a erros de I/O)."""
+def _get_duracao_segundos(path: str) -> float | None:
+    """Retorna a duração do arquivo MP3 em segundos via ffprobe. Retorna None em caso de erro."""
     try:
-        return Path(CURRENT_SONG_PATH).read_text(encoding="utf-8", errors="ignore").strip()
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", path],
+            capture_output=True, text=True, timeout=10,
+        )
+        data = json.loads(result.stdout)
+        return float(data["format"]["duration"])
+    except Exception as e:
+        print(f"[WATCHER] Não foi possível obter duração de {path}: {e}")
+        return None
+
+
+def _ler_current_song() -> str:
+    """Lê o conteúdo atual de CurrentSong.txt (tolerante a erros de I/O).
+
+    ZaraRadio (Windows) grava o arquivo em ANSI/CP1252.
+    Fallback para UTF-8 caso o arquivo esteja em outro encoding.
+    """
+    try:
+        try:
+            return Path(CURRENT_SONG_PATH).read_text(encoding="cp1252").strip()
+        except UnicodeDecodeError:
+            return Path(CURRENT_SONG_PATH).read_text(encoding="utf-8", errors="ignore").strip()
     except Exception:
         return ""
 
