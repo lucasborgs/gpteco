@@ -22,15 +22,15 @@ from core import database
 
 # Valores padrão — usados como fallback se a chave não existir no banco
 _DEFAULTS: dict[str, str] = {
-    "nome_radio":       "Rádio Flashback",
-    "genero_aceito":    "flashback 70s-2000s",
-    "ano_maximo":       "2010",
+    "nome_radio":       "Luz FM",
+    "genero_aceito":    "todos os gêneros musicais, exceto sertanejo, funk brasileiro atual e gospel",
+    "ano_maximo":       "sem_restricao",
     "publico_alvo":     "adulto 30+",
-    "msg_sucesso":      "Obrigado pela sua indicação! {artista} - {musica} já está na fila.",
-    "msg_cooldown":     "Você já fez um pedido nas últimas 6 horas. Tente novamente mais tarde!",
-    "msg_inapropriado": "Não foi possível atender esse pedido. Mande uma mensagem respeitosa!",
-    "msg_nao_repertorio": "'{musica}' não está no repertório da rádio. Que tal outro clássico?",
-    "msg_nao_id":       "Não consegui identificar a música. Pode repetir o pedido?",
+    "msg_sucesso":      "Obrigado pela sua indicação! {artista} - {musica} já está na fila.\nLuz FM, sempre ligada em você!",
+    "msg_cooldown":     "Você já fez um pedido nas últimas 6 horas. Tente novamente mais tarde.\nLuz FM, sempre ligada em você!",
+    "msg_inapropriado": "Não foi possível atender esse pedido. Mande uma mensagem respeitosa.\nLuz FM, sempre ligada em você!",
+    "msg_nao_repertorio": "'{musica}' não está no repertório da rádio. Que tal outro clássico?\nLuz FM, sempre ligada em você!",
+    "msg_nao_id":       "Não consegui identificar a música. Pode repetir o pedido?\nLuz FM, sempre ligada em você!",
 }
 
 
@@ -123,11 +123,16 @@ def build_system_prompt() -> str:
     ano_maximo   = get_config("ano_maximo")
     publico_alvo = get_config("publico_alvo")
 
+    restricao_ano = (
+        ""
+        if ano_maximo == "sem_restricao"
+        else f"Músicas lançadas após {ano_maximo} NÃO se qualificam para a programação desta rádio.\n"
+    )
+
     return f"""
 Você é o assistente de triagem de pedidos da {nome_radio}, uma rádio FM brasileira.
-O público é {publico_alvo} e a programação é focada em {genero}.
-Músicas lançadas após {ano_maximo} NÃO se qualificam para a programação desta rádio.
-
+O público é {publico_alvo} e a programação aceita {genero}.
+{restricao_ano}
 Analise a mensagem do ouvinte e retorne APENAS um objeto JSON válido com estas chaves:
 
 - "is_pedido_musical": boolean — true se a mensagem é um pedido de música para a rádio;
@@ -136,17 +141,24 @@ Analise a mensagem do ouvinte e retorne APENAS um objeto JSON válido com estas 
 - "musica"           : string com o título da música mencionada (ou "" se não identificado)
 - "artista"          : string com o nome do artista/banda (ou "" se não identificado)
 - "is_flashback"     : boolean — true se a música se encaixa na programação da rádio
-- "is_apropriado"    : boolean — true se a mensagem é respeitosa (sem xingamentos, ofensas
-                       ou conteúdo impróprio para rádio); false caso contrário
+- "is_apropriado"    : boolean — true se a mensagem é respeitosa; false caso contrário
 
 Regras importantes:
 0. Determine PRIMEIRO se é um pedido de música. Se is_pedido_musical for false, os outros
    campos podem assumir seus valores padrão ("", "", false, true) — não force identificação.
 1. Se não conseguir identificar música ou artista com confiança, retorne strings vazias
    e is_flashback: false.
-2. is_apropriado avalia o TOM da mensagem do ouvinte, não o conteúdo da música.
-3. Normalize artista e música: capitalize corretamente, remova ruído da transcrição.
+2. is_apropriado é false se a mensagem contiver xingamentos, ofensas ou conteúdo impróprio;
+   OU se qualquer nome próprio na mensagem (remetente ou destinatário) for um trocadilho,
+   nome-piada ou apelido com conotação sexual ou grosseira quando lido foneticamente em
+   português (ex: nomes que soam como expressões obscenas ou palavrões).
+3. Normalize artista e música: capitalize corretamente, remova ruído da transcrição,
+   e use o título oficial da música mesmo que o ouvinte use uma letra, apelido popular
+   ou nome coloquial (ex: "me pirou o cabeção" → musica: "A Cera", artista: "Charlie Brown Jr.").
 4. Retorne SOMENTE o JSON, sem markdown, sem comentários, sem texto adicional.
 5. Se o ouvinte mencionar mais de uma música, identifique APENAS a primeira
    mencionada na mensagem. Ignore as demais completamente.
+6. Se o ouvinte pedir uma música de um artista sem especificar o título
+   (ex: "toca uma do Zé Ramalho", "coloca uma música do Charlie Brown"), escolha
+   uma música popular desse artista e preencha `musica` com o título oficial escolhido.
 """.strip()

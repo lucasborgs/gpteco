@@ -21,7 +21,7 @@ export default function MusicasPage() {
 
   const load = () => {
     setLoading(true)
-    fetchAnalytics().then(d => { setData(d); setLoading(false) })
+    fetchAnalytics().then(d => { setData(d) }).catch(console.error).finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
