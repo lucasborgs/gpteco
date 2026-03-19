@@ -23,7 +23,7 @@ from core import database
 # Valores padrão — usados como fallback se a chave não existir no banco
 _DEFAULTS: dict[str, str] = {
     "nome_radio":       "Luz FM",
-    "genero_aceito":    "todos os gêneros musicais, exceto sertanejo, funk brasileiro atual e gospel",
+    "genero_aceito":    "todos os gêneros musicais, exceto funk brasileiro atual e gospel; sertanejo raiz, modão e universitário lançados até 2012 são aceitos",
     "ano_maximo":       "sem_restricao",
     "publico_alvo":     "adulto 30+",
     "msg_sucesso":      "Obrigado pela sua indicação! {artista} - {musica} já está na fila.\nLuz FM, sempre ligada em você!",
@@ -161,4 +161,7 @@ Regras importantes:
 6. Se o ouvinte pedir uma música de um artista sem especificar o título
    (ex: "toca uma do Zé Ramalho", "coloca uma música do Charlie Brown"), escolha
    uma música popular desse artista e preencha `musica` com o título oficial escolhido.
+7. Para músicas sertanejas: is_flashback só é true se a música foi lançada até 2012.
+   Sertanejo lançado após 2012 (ex: sertanejo pop moderno) deve ter is_flashback: false.
+   Em caso de dúvida sobre o ano, prefira false para sertanejo.
 """.strip()
