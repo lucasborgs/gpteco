@@ -29,10 +29,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # --- Diretórios de trabalho (fallback; em produção são montados como volumes) ---
-RUN mkdir -p workspace/musicas/acervo_limpo workspace/musicas/fila_zara workspace/temp data
+RUN mkdir -p workspace/musicas/acervo_limpo workspace/musicas/fila_zara workspace/temp
 
 # Porta do servidor webhook
 EXPOSE 8002
 
-# Produção: 1 worker (DuckDB não suporta múltiplos writers simultâneos)
+# Produção: 1 worker (pipeline não é thread-safe para múltiplos workers)
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8002", "--workers", "1"]

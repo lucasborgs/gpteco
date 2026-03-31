@@ -1,31 +1,26 @@
-# === STT / Transcrição ===
-# openai-whisper  # substituído pela API Whisper do Groq (zero RAM local)
-
 # === LLM / Inteligência ===
-openai
-google-generativeai
+openai~=2.13
 
 # === Banco de dados ===
-duckdb
+psycopg2-binary~=2.9
 
 # === Processamento de áudio ===
-pydub
-audioop-lts  # compatibilidade do pydub com Python 3.13+
+pydub~=0.25
+audioop-lts~=0.2  # compatibilidade do pydub com Python 3.13+
 
 # === Download e conversão ===
-yt-dlp
-ffmpeg-python
+yt-dlp>=2025.1
 
 # === Servidor webhook ===
-fastapi
-uvicorn[standard]
-httpx
+fastapi~=0.131
+uvicorn[standard]~=0.38
+httpx~=0.28
 
 # === Utilitários ===
-python-dotenv
+python-dotenv~=1.0
 
-# === Dashboard de analytics ===
-gradio
-matplotlib
-squarify
-numpy
+# === Dashboard de analytics (dashboard.py) ===
+gradio~=6.9
+matplotlib~=3.10
+squarify~=0.4
+numpy~=2.1

@@ -36,7 +36,12 @@ def _normalizar_voz(voz: AudioSegment, target_dbfs: float = VOZ_TARGET_DBFS) -> 
     """
     Normaliza o volume da voz para o target_dbfs especificado.
     Usa a diferença entre o volume atual e o alvo para aplicar o ganho correto.
+    Se a voz for silêncio total (dBFS = -inf), retorna sem alteração.
     """
+    import math
+    if math.isinf(voz.dBFS):
+        print("[MIXER] Aviso: voz com silêncio total (dBFS = -inf) — normalização ignorada.")
+        return voz
     diferenca = target_dbfs - voz.dBFS
     return voz.apply_gain(diferenca)
 
@@ -109,7 +114,7 @@ def mixar(path_voz: str, path_musica: str, path_saida: str) -> str:
         # Música entra 5s antes do fim da voz
         inicio_musica_ms = duracao_voz_ms - JANELA_ENTRADA_MS
         fade_duration_ms = JANELA_ENTRADA_MS
-        print(f"[MIXER] Música entra em {inicio_musica_ms / 1000:.1f}s (5s antes do fim da voz)")
+        print(f"[MIXER] Música entra em {inicio_musica_ms / 1000:.1f}s ({JANELA_ENTRADA_MS // 1000}s antes do fim da voz)")
 
     # --- 5. Aplica fade_in na música ---
     # A música sobe de silêncio absoluto até volume cheio em fade_duration_ms.

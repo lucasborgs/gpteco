@@ -32,17 +32,19 @@ def top_musicas_semana(limit: int = 5) -> list[dict]:
     con = database._get_connection()
     try:
         inicio = datetime.now() - timedelta(days=7)
-        rows = con.execute("""
-            SELECT artista, musica, COUNT(*) AS pedidos
-            FROM dim_pedidos
-            WHERE timestamp_pedido >= ?
-              AND sucesso = TRUE
-              AND artista != ''
-              AND musica  != ''
-            GROUP BY artista, musica
-            ORDER BY pedidos DESC
-            LIMIT ?
-        """, [inicio, limit]).fetchall()
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT artista, musica, COUNT(*) AS pedidos
+                FROM dim_pedidos
+                WHERE timestamp_pedido >= %s
+                  AND sucesso = TRUE
+                  AND artista != ''
+                  AND musica  != ''
+                GROUP BY artista, musica
+                ORDER BY pedidos DESC
+                LIMIT %s
+            """, [inicio, limit])
+            rows = cur.fetchall()
         return [{"artista": r[0], "musica": r[1], "pedidos": r[2]} for r in rows]
     finally:
         con.close()
@@ -57,14 +59,17 @@ def top_horarios_semana(limit: int = 5) -> list[dict]:
     con = database._get_connection()
     try:
         inicio = datetime.now() - timedelta(days=7)
-        rows = con.execute("""
-            SELECT hour(timestamp_pedido) AS hora, COUNT(*) AS pedidos
-            FROM dim_pedidos
-            WHERE timestamp_pedido >= ?
-            GROUP BY hora
-            ORDER BY pedidos DESC
-            LIMIT ?
-        """, [inicio, limit]).fetchall()
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT EXTRACT(HOUR FROM timestamp_pedido)::int AS hora,
+                       COUNT(*) AS pedidos
+                FROM dim_pedidos
+                WHERE timestamp_pedido >= %s
+                GROUP BY hora
+                ORDER BY pedidos DESC
+                LIMIT %s
+            """, [inicio, limit])
+            rows = cur.fetchall()
         return [{"hora": r[0], "pedidos": r[1]} for r in rows]
     finally:
         con.close()
@@ -77,16 +82,18 @@ def top_musicas_all_time(limit: int = 10) -> list[dict]:
     """
     con = database._get_connection()
     try:
-        rows = con.execute("""
-            SELECT artista, musica, COUNT(*) AS pedidos
-            FROM dim_pedidos
-            WHERE sucesso = TRUE
-              AND artista != ''
-              AND musica  != ''
-            GROUP BY artista, musica
-            ORDER BY pedidos DESC
-            LIMIT ?
-        """, [limit]).fetchall()
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT artista, musica, COUNT(*) AS pedidos
+                FROM dim_pedidos
+                WHERE sucesso = TRUE
+                  AND artista != ''
+                  AND musica  != ''
+                GROUP BY artista, musica
+                ORDER BY pedidos DESC
+                LIMIT %s
+            """, [limit])
+            rows = cur.fetchall()
         return [{"artista": r[0], "musica": r[1], "pedidos": r[2]} for r in rows]
     finally:
         con.close()
@@ -100,14 +107,16 @@ def pico_por_dia_semana() -> list[dict]:
     _DIAS = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"]
     con = database._get_connection()
     try:
-        # DuckDB: dayofweek retorna 0=domingo ... 6=sábado → convertemos para 0=segunda
-        rows = con.execute("""
-            SELECT (dayofweek(timestamp_pedido) + 6) % 7 AS dia_semana,
-                   COUNT(*) AS pedidos
-            FROM dim_pedidos
-            GROUP BY dia_semana
-            ORDER BY dia_semana
-        """).fetchall()
+        # PostgreSQL: EXTRACT(DOW) retorna 0=domingo ... 6=sábado → convertemos para 0=segunda
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT (EXTRACT(DOW FROM timestamp_pedido)::int + 6) % 7 AS dia_semana,
+                       COUNT(*) AS pedidos
+                FROM dim_pedidos
+                GROUP BY dia_semana
+                ORDER BY dia_semana
+            """)
+            rows = cur.fetchall()
         return [
             {"dia_semana": r[0], "dia_nome": _DIAS[r[0]], "pedidos": r[1]}
             for r in rows
@@ -118,16 +127,22 @@ def pico_por_dia_semana() -> list[dict]:
 
 def taxa_atendimento() -> dict:
     """
-    Taxa de sucesso vs. rejeição do pipeline.
+    Taxa de sucesso vs. rejeição do pipeline nos últimos 7 dias.
+    Considera apenas pedidos musicais (exclui saudações e mensagens fora de escopo).
     Retorna dict: {total, sucesso, recusado, taxa_sucesso_pct, por_motivo}
     """
     con = database._get_connection()
     try:
-        rows = con.execute("""
-            SELECT sucesso, motivo_rejeicao, COUNT(*) AS qtd
-            FROM dim_pedidos
-            GROUP BY sucesso, motivo_rejeicao
-        """).fetchall()
+        inicio = datetime.now() - timedelta(days=7)
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT sucesso, motivo_rejeicao, COUNT(*) AS qtd
+                FROM dim_pedidos
+                WHERE timestamp_pedido >= %s
+                  AND (motivo_rejeicao IS NULL OR motivo_rejeicao != 'saudacao')
+                GROUP BY sucesso, motivo_rejeicao
+            """, [inicio])
+            rows = cur.fetchall()
 
         total = 0
         aceitos = 0
@@ -163,14 +178,16 @@ def ouvintes_engajados(limit: int = 10) -> list[dict]:
     """
     con = database._get_connection()
     try:
-        rows = con.execute("""
-            SELECT numero, COUNT(*) AS pedidos, MIN(timestamp_pedido) AS primeiro_pedido
-            FROM dim_pedidos
-            WHERE sucesso = TRUE
-            GROUP BY numero
-            ORDER BY pedidos DESC
-            LIMIT ?
-        """, [limit]).fetchall()
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT numero, COUNT(*) AS pedidos, MIN(timestamp_pedido) AS primeiro_pedido
+                FROM dim_pedidos
+                WHERE sucesso = TRUE
+                GROUP BY numero
+                ORDER BY pedidos DESC
+                LIMIT %s
+            """, [limit])
+            rows = cur.fetchall()
 
         resultado = []
         for numero, pedidos, primeiro_pedido in rows:
@@ -194,13 +211,15 @@ def heatmap_pedidos() -> list[dict]:
     """
     con = database._get_connection()
     try:
-        rows = con.execute("""
-            SELECT hour(timestamp_pedido)              AS hora,
-                   (dayofweek(timestamp_pedido) + 6) % 7 AS dia_semana,
-                   COUNT(*) AS pedidos
-            FROM dim_pedidos
-            GROUP BY hora, dia_semana
-        """).fetchall()
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT EXTRACT(HOUR FROM timestamp_pedido)::int          AS hora,
+                       (EXTRACT(DOW FROM timestamp_pedido)::int + 6) % 7 AS dia_semana,
+                       COUNT(*) AS pedidos
+                FROM dim_pedidos
+                GROUP BY hora, dia_semana
+            """)
+            rows = cur.fetchall()
         return [{"hora": r[0], "dia_semana": r[1], "pedidos": r[2]} for r in rows]
     finally:
         con.close()
@@ -215,26 +234,30 @@ def tendencia_musicas(limit: int = 5) -> list[dict]:
     con = database._get_connection()
     try:
         agora = datetime.now()
-        inicio_semana      = agora - timedelta(days=7)
+        inicio_semana       = agora - timedelta(days=7)
         inicio_sem_anterior = agora - timedelta(days=14)
 
-        rows_atual = con.execute("""
-            SELECT artista, musica, COUNT(*) AS pedidos
-            FROM dim_pedidos
-            WHERE timestamp_pedido >= ? AND sucesso = TRUE AND artista != ''
-            GROUP BY artista, musica
-            ORDER BY pedidos DESC
-            LIMIT ?
-        """, [inicio_semana, limit]).fetchall()
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT artista, musica, COUNT(*) AS pedidos
+                FROM dim_pedidos
+                WHERE timestamp_pedido >= %s AND sucesso = TRUE AND artista != ''
+                GROUP BY artista, musica
+                ORDER BY pedidos DESC
+                LIMIT %s
+            """, [inicio_semana, limit])
+            rows_atual = cur.fetchall()
 
-        rows_anterior = con.execute("""
-            SELECT artista, musica, COUNT(*) AS pedidos
-            FROM dim_pedidos
-            WHERE timestamp_pedido >= ? AND timestamp_pedido < ?
-              AND sucesso = TRUE AND artista != ''
-            GROUP BY artista, musica
-            ORDER BY pedidos DESC
-        """, [inicio_sem_anterior, inicio_semana]).fetchall()
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT artista, musica, COUNT(*) AS pedidos
+                FROM dim_pedidos
+                WHERE timestamp_pedido >= %s AND timestamp_pedido < %s
+                  AND sucesso = TRUE AND artista != ''
+                GROUP BY artista, musica
+                ORDER BY pedidos DESC
+            """, [inicio_sem_anterior, inicio_semana])
+            rows_anterior = cur.fetchall()
 
         ranking_anterior = {
             f"{artista}|{musica}": pos
@@ -270,11 +293,13 @@ def breakdown_ddd() -> list[dict]:
     """
     con = database._get_connection()
     try:
-        rows = con.execute("""
-            SELECT numero, COUNT(*) AS pedidos
-            FROM dim_pedidos
-            GROUP BY numero
-        """).fetchall()
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT numero, COUNT(*) AS pedidos
+                FROM dim_pedidos
+                GROUP BY numero
+            """)
+            rows = cur.fetchall()
 
         ddd_count: dict[str, int] = {}
         for numero, pedidos in rows:
@@ -297,14 +322,16 @@ def top_artistas(limit: int = 15) -> list[dict]:
     """
     con = database._get_connection()
     try:
-        rows = con.execute("""
-            SELECT artista, COUNT(*) AS pedidos
-            FROM dim_pedidos
-            WHERE sucesso = TRUE AND artista != ''
-            GROUP BY artista
-            ORDER BY pedidos DESC
-            LIMIT ?
-        """, [limit]).fetchall()
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT artista, COUNT(*) AS pedidos
+                FROM dim_pedidos
+                WHERE sucesso = TRUE AND artista != ''
+                GROUP BY artista
+                ORDER BY pedidos DESC
+                LIMIT %s
+            """, [limit])
+            rows = cur.fetchall()
         return [{"artista": r[0], "pedidos": r[1]} for r in rows]
     finally:
         con.close()

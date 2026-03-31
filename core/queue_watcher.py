@@ -67,16 +67,40 @@ POLL_INTERVAL: int = int(os.getenv("WATCHER_POLL_INTERVAL", "2"))
 # Segundos extras de buffer após o fim estimado antes de forçar remoção
 PLAYBACK_BUFFER_S: int = int(os.getenv("WATCHER_PLAYBACK_BUFFER", "30"))
 
+# Duração máxima assumida quando ffprobe não consegue ler o arquivo.
+# Garante que a fila nunca trava indefinidamente mesmo com arquivo corrompido.
+MAX_DURACAO_FALLBACK_S: int = int(os.getenv("WATCHER_MAX_DURACAO_FALLBACK", "600"))  # 10 min
+
 # Lock protege fila_zara e queue_pedidos contra acesso simultâneo do watcher e do pipeline
 _lock = threading.Lock()
+
+# Referência à thread principal do watcher — usada pelo watchdog para detectar morte
+_thread: threading.Thread | None = None
 
 
 # ---------------------------------------------------------------------------
 # API pública
 # ---------------------------------------------------------------------------
 
+def _watchdog() -> None:
+    """
+    Monitora a thread principal do watcher a cada 60s.
+    Se a thread morrer (exceção não tratada), reinicia automaticamente.
+    Não toca em nenhuma lógica interna do _loop().
+    """
+    global _thread
+    while True:
+        time.sleep(60)
+        if _thread is not None and not _thread.is_alive():
+            print("[WATCHER] ALERTA: thread do watcher morreu — reiniciando...")
+            _thread = threading.Thread(target=_loop, name="queue-watcher", daemon=True)
+            _thread.start()
+            print("[WATCHER] Thread reiniciada.")
+
+
 def start() -> None:
     """Inicia o watcher em thread daemon (não bloqueia o processo principal)."""
+    global _thread
     os.makedirs(QUEUE_DIR, exist_ok=True)
     os.makedirs(FILA_ZARA_DIR, exist_ok=True)
 
@@ -84,8 +108,12 @@ def start() -> None:
     with _lock:
         _equilibrar_fila()
 
-    t = threading.Thread(target=_loop, name="queue-watcher", daemon=True)
-    t.start()
+    _thread = threading.Thread(target=_loop, name="queue-watcher", daemon=True)
+    _thread.start()
+
+    watchdog = threading.Thread(target=_watchdog, name="queue-watchdog", daemon=True)
+    watchdog.start()
+
     print("[WATCHER] Iniciado.")
     print(f"[WATCHER]   Queue       : {QUEUE_DIR}")
     print(f"[WATCHER]   Fila Zara   : {FILA_ZARA_DIR}")
@@ -133,66 +161,78 @@ def _loop() -> None:
     while True:
         time.sleep(POLL_INTERVAL)
 
-        with _lock:
-            current_song = _ler_current_song()
-            arquivo_fila = _arquivo_em_fila()
+        try:
+            with _lock:
+                current_song = _ler_current_song()
+                arquivo_fila = _arquivo_em_fila()
 
-            # Sem arquivo na fila: tenta promover o próximo
-            if arquivo_fila is None:
-                _duracao_cache.clear()
-                em_reproducao = False
-                playback_start = 0.0
-                _promover_proximo()
-                prev_song = current_song
-                continue
-
-            # Cache de duração — lido uma única vez por arquivo
-            if arquivo_fila not in _duracao_cache:
-                d = _get_duracao_segundos(arquivo_fila)
-                if d is not None:
-                    _duracao_cache[arquivo_fila] = d
-
-            duracao_s = _duracao_cache.get(arquivo_fila)
-
-            # --- Detecção primária: CurrentSong.txt mudou ---
-            if current_song != prev_song:
-                aparecia_antes = _nome_em_conteudo(arquivo_fila, prev_song)
-                aparece_agora  = _nome_em_conteudo(arquivo_fila, current_song)
-
-                if not em_reproducao and aparece_agora:
-                    # Arquivo entrou no CurrentSong.txt → reprodução iniciou
-                    em_reproducao = True
-                    playback_start = time.time()
-                    print(f"[WATCHER] Reprodução iniciada: {Path(arquivo_fila).name}")
-
-                if em_reproducao and not aparece_agora:
-                    # ZaraRadio mudou de faixa → arquivo saiu do CurrentSong.txt
-                    print(f"[WATCHER] Troca de faixa detectada → removendo.")
-                    _duracao_cache.pop(arquivo_fila, None)
-                    _deletar(arquivo_fila)
+                # Sem arquivo na fila: tenta promover o próximo
+                if arquivo_fila is None:
+                    _duracao_cache.clear()
                     em_reproducao = False
                     playback_start = 0.0
                     _promover_proximo()
                     prev_song = current_song
                     continue
 
-                prev_song = current_song
+                # Cache de duração — lido uma única vez por arquivo
+                if arquivo_fila not in _duracao_cache:
+                    d = _get_duracao_segundos(arquivo_fila)
+                    if d is not None:
+                        _duracao_cache[arquivo_fila] = d
+                    else:
+                        # ffprobe falhou: usa duração máxima de fallback para que o
+                        # timer ainda expire e a fila nunca trave indefinidamente.
+                        _duracao_cache[arquivo_fila] = float(MAX_DURACAO_FALLBACK_S)
+                        print(f"[WATCHER] ffprobe falhou — usando fallback de {MAX_DURACAO_FALLBACK_S}s para {Path(arquivo_fila).name}")
 
-            # --- Detecção fallback: timer desde o início da reprodução ---
-            # Cobre o caso em que ZaraRadio termina sem próxima faixa e
-            # não atualiza o CurrentSong.txt.
-            if em_reproducao and duracao_s is not None:
-                elapsed = time.time() - playback_start
-                if elapsed > duracao_s + PLAYBACK_BUFFER_S:
-                    print(
-                        f"[WATCHER] Timer expirado ({elapsed:.0f}s > "
-                        f"{duracao_s:.0f}s + {PLAYBACK_BUFFER_S}s) → removendo."
-                    )
-                    _duracao_cache.pop(arquivo_fila, None)
-                    _deletar(arquivo_fila)
-                    em_reproducao = False
-                    playback_start = 0.0
-                    _promover_proximo()
+                duracao_s = _duracao_cache.get(arquivo_fila)
+
+                # --- Detecção primária: CurrentSong.txt mudou ---
+                if current_song != prev_song:
+                    aparecia_antes = _nome_em_conteudo(arquivo_fila, prev_song)
+                    aparece_agora  = _nome_em_conteudo(arquivo_fila, current_song)
+
+                    if not em_reproducao and aparece_agora:
+                        # Arquivo entrou no CurrentSong.txt → reprodução iniciou
+                        em_reproducao = True
+                        playback_start = time.time()
+                        print(f"[WATCHER] Reprodução iniciada: {Path(arquivo_fila).name}")
+
+                    if em_reproducao and not aparece_agora:
+                        # ZaraRadio mudou de faixa → arquivo saiu do CurrentSong.txt
+                        print(f"[WATCHER] Troca de faixa detectada → removendo.")
+                        _duracao_cache.pop(arquivo_fila, None)
+                        _deletar(arquivo_fila)
+                        em_reproducao = False
+                        playback_start = 0.0
+                        _promover_proximo()
+                        prev_song = current_song
+                        continue
+
+                    prev_song = current_song
+
+                # --- Detecção fallback: timer desde o início da reprodução ---
+                # Cobre o caso em que ZaraRadio termina sem próxima faixa e
+                # não atualiza o CurrentSong.txt.
+                if em_reproducao and duracao_s is not None:
+                    elapsed = time.time() - playback_start
+                    if elapsed > duracao_s + PLAYBACK_BUFFER_S:
+                        print(
+                            f"[WATCHER] Timer expirado ({elapsed:.0f}s > "
+                            f"{duracao_s:.0f}s + {PLAYBACK_BUFFER_S}s) → removendo."
+                        )
+                        _duracao_cache.pop(arquivo_fila, None)
+                        _deletar(arquivo_fila)
+                        em_reproducao = False
+                        playback_start = 0.0
+                        _promover_proximo()
+
+        except Exception as e:
+            # Proteção: erro inesperado numa iteração não mata a thread.
+            # O estado local (prev_song, em_reproducao, etc.) é preservado
+            # para a próxima iteração — o lock é liberado automaticamente.
+            print(f"[WATCHER] Erro inesperado na iteração: {e} — continuando...")
 
 
 # ---------------------------------------------------------------------------
@@ -273,19 +313,24 @@ def _promover_proximo() -> str | None:
 
 
 def _deletar(path: str) -> None:
-    """Remove o arquivo da fila_zara com retry para o caso de o ZaraRadio ainda ter o handle aberto."""
+    """Remove o arquivo da fila_zara com retry para o caso de o ZaraRadio ainda ter o handle aberto.
+    10 tentativas × 3s = até 30s de espera antes de desistir.
+    """
     nome = Path(path).name
-    for tentativa in range(1, 6):
+    MAX_TENTATIVAS = 10
+    for tentativa in range(1, MAX_TENTATIVAS + 1):
         try:
             os.remove(path)
             print(f"[WATCHER] Removido após reprodução: {nome}")
             return
         except OSError as e:
-            if tentativa < 5:
-                print(f"[WATCHER] Arquivo ocupado, tentativa {tentativa}/5 — aguardando 2s ({e})")
-                time.sleep(2)
+            if tentativa < MAX_TENTATIVAS:
+                print(f"[WATCHER] Arquivo ocupado, tentativa {tentativa}/{MAX_TENTATIVAS} — aguardando 3s ({e})")
+                time.sleep(3)
             else:
-                print(f"[WATCHER] Erro ao remover {nome} após 5 tentativas: {e}")
+                print(f"[WATCHER] Erro ao remover {nome} após {MAX_TENTATIVAS} tentativas: {e}")
+                # Mesmo sem conseguir deletar, avança a fila — o arquivo órfão
+                # será reaproveitado ou ignorado pelo ZaraRadio na próxima sessão.
 
 
 def _equilibrar_fila() -> None:

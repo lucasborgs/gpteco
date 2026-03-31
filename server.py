@@ -38,6 +38,7 @@ Iniciar em produção (Windows):
 
 import asyncio
 import os
+from collections import OrderedDict
 
 from dotenv import load_dotenv
 
@@ -47,7 +48,7 @@ from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from core import config_radio, database, queue_watcher, relatorio, whatsapp
+from core import database, queue_watcher, relatorio, whatsapp
 from core.pipeline import processar_pedido
 
 app = FastAPI(title="Agente Virtual Musical", version="1.0.0")
@@ -61,8 +62,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Cache de IDs de mensagens já processadas (evita duplicatas do WAHA NOWEB)
-_mensagens_processadas: set[str] = set()
+# Cache LRU de IDs de mensagens já processadas (evita duplicatas do WAHA NOWEB)
+_mensagens_processadas: OrderedDict[str, None] = OrderedDict()
+_MAX_CACHE_MENSAGENS = 500
 
 # Número do dono da rádio para receber o relatório semanal
 NUMERO_DONO: str = os.getenv("NUMERO_DONO", "")
@@ -81,6 +83,7 @@ async def startup() -> None:
     if NUMERO_DONO:
         asyncio.create_task(_loop_relatorio_semanal())
         print(f"[SERVER] Relatorio semanal ativado para: {NUMERO_DONO}")
+    asyncio.create_task(_loop_monitor_sessao())
     print("[SERVER] Pronto. Aguardando mensagens do WhatsApp...")
 
 
@@ -97,8 +100,11 @@ async def _loop_relatorio_semanal() -> None:
         dias_ate_segunda = (7 - agora.weekday()) % 7
         if dias_ate_segunda == 0 and agora.hour < 9:
             proxima = agora.replace(hour=9, minute=0, second=0, microsecond=0)
+        elif dias_ate_segunda == 0:
+            # Hoje é segunda-feira mas já passou das 09h — próximo disparo é daqui a 7 dias
+            proxima = (agora + timedelta(days=7)).replace(hour=9, minute=0, second=0, microsecond=0)
         else:
-            proxima = (agora + timedelta(days=max(dias_ate_segunda, 1))).replace(
+            proxima = (agora + timedelta(days=dias_ate_segunda)).replace(
                 hour=9, minute=0, second=0, microsecond=0
             )
         segundos = (proxima - agora).total_seconds()
@@ -125,6 +131,49 @@ async def _configurar_webhook_com_retry() -> None:
     print("[SERVER] AVISO: Webhook nao configurado automaticamente. Configure manualmente.")
 
 
+async def _loop_monitor_sessao() -> None:
+    """
+    Verifica a cada 5 minutos se a sessão WAHA está conectada.
+    Se desconectada, loga aviso e envia alerta via WhatsApp ao dono (se configurado).
+    """
+    import httpx
+    WAHA_URL = os.getenv("WAHA_URL", "http://localhost:3001").rstrip("/")
+    WAHA_API_KEY = os.getenv("WAHA_API_KEY", "")
+    WAHA_SESSION = os.getenv("WAHA_SESSION", "default")
+    INTERVALO_S = 300  # 5 minutos
+    ja_alertou = False
+
+    await asyncio.sleep(30)  # Aguarda o WAHA inicializar antes do primeiro check
+
+    while True:
+        try:
+            url = f"{WAHA_URL}/api/sessions/{WAHA_SESSION}"
+            headers = {"X-Api-Key": WAHA_API_KEY} if WAHA_API_KEY else {}
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url, headers=headers)
+            status = resp.json().get("status", "UNKNOWN") if resp.status_code == 200 else "UNREACHABLE"
+
+            if status not in ("WORKING", "CONNECTED"):
+                print(f"[MONITOR] ALERTA: Sessão WAHA com status '{status}' — WhatsApp desconectado!")
+                if NUMERO_DONO and not ja_alertou:
+                    await asyncio.to_thread(
+                        lambda: whatsapp.enviar_mensagem(
+                            NUMERO_DONO,
+                            f"⚠️ ALERTA: A sessão do WhatsApp está '{status}'. Reconecte o QR code no painel WAHA."
+                        )
+                    )
+                    ja_alertou = True
+            else:
+                if ja_alertou:
+                    print("[MONITOR] Sessão WAHA reconectada.")
+                    ja_alertou = False
+
+        except Exception as e:
+            print(f"[MONITOR] Erro ao verificar sessão WAHA: {e}")
+
+        await asyncio.sleep(INTERVALO_S)
+
+
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
@@ -132,37 +181,6 @@ async def _configurar_webhook_com_retry() -> None:
 @app.get("/")
 async def health():
     return {"status": "online", "servico": "Agente Virtual Musical"}
-
-
-# ---------------------------------------------------------------------------
-# Configuração da rádio
-# ---------------------------------------------------------------------------
-
-@app.get("/config")
-async def get_config():
-    """Retorna todas as configurações da rádio."""
-    return await asyncio.to_thread(config_radio.get_all_config)
-
-
-@app.put("/config")
-async def put_config(request: Request):
-    """
-    Atualiza uma ou mais configurações da rádio.
-
-    Body: JSON com chave → valor (ex: {"nome_radio": "Radio Classicos FM"})
-    """
-    try:
-        body = await request.json()
-    except Exception:
-        return JSONResponse({"status": "invalid_payload"}, status_code=400)
-
-    if not isinstance(body, dict):
-        return JSONResponse({"status": "body deve ser um objeto JSON"}, status_code=400)
-
-    await asyncio.to_thread(
-        lambda: [config_radio.set_config(str(k), str(v)) for k, v in body.items()]
-    )
-    return {"status": "updated", "keys": list(body.keys())}
 
 
 # ---------------------------------------------------------------------------
@@ -233,9 +251,9 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     if msg_id and msg_id in _mensagens_processadas:
         return JSONResponse({"status": "duplicate"})
     if msg_id:
-        _mensagens_processadas.add(msg_id)
-        if len(_mensagens_processadas) > 500:  # evita crescimento ilimitado
-            _mensagens_processadas.clear()
+        _mensagens_processadas[msg_id] = None
+        while len(_mensagens_processadas) > _MAX_CACHE_MENSAGENS:
+            _mensagens_processadas.popitem(last=False)  # remove o mais antigo
 
     # Mantém o JID completo como identificador único do ouvinte
     # WAHA NOWEB usa @lid em vez de @c.us — mantemos o JID inteiro para
@@ -272,10 +290,28 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
 # ---------------------------------------------------------------------------
 
 async def _pipeline_texto(numero: str, texto: str) -> None:
-    """Processa pedido de texto e envia resposta ao ouvinte."""
-    resultado = await asyncio.to_thread(
-        lambda: processar_pedido(numero=numero, texto=texto)
-    )
+    """Processa pedido de texto — com detecção de pendência de confirmação."""
+    pendencia = await asyncio.to_thread(lambda: database.buscar_pendencia(numero))
+
+    def _notificar(msg: str) -> None:
+        whatsapp.enviar_mensagem(numero, msg)
+
+    if pendencia:
+        # Ouvinte está confirmando a música por texto após transcrição mal interpretada.
+        # Usa o áudio original salvo para a mixagem, mas o texto digitado para a análise LLM.
+        path_ogg = pendencia["path_ogg"]
+        resultado = await asyncio.to_thread(
+            lambda: processar_pedido(numero=numero, path_ogg=path_ogg, texto=texto, notificar=_notificar)
+        )
+        await asyncio.to_thread(lambda: database.remover_pendencia(numero))
+        if not resultado.get("pendente") and os.path.isfile(path_ogg):
+            os.remove(path_ogg)
+            print(f"[SERVER] Temp pendência removido: {path_ogg}")
+    else:
+        resultado = await asyncio.to_thread(
+            lambda: processar_pedido(numero=numero, texto=texto, notificar=_notificar)
+        )
+
     if resultado["mensagem"]:
         await asyncio.to_thread(
             lambda: whatsapp.enviar_mensagem(numero, resultado["mensagem"])
@@ -296,20 +332,26 @@ async def _pipeline_audio(numero: str, msg: dict) -> None:
         )
         return
 
-    # 2. Processa e responde; garante limpeza do .ogg temporario
+    # 2. Processa e responde.
+    # Se pendente=True, o .ogg é mantido para ser usado na confirmação por texto.
+    def _notificar(msg: str) -> None:
+        whatsapp.enviar_mensagem(numero, msg)
+
+    resultado = {"pendente": False, "mensagem": None}
     try:
         resultado = await asyncio.to_thread(
-            lambda: processar_pedido(numero=numero, path_ogg=path_ogg)
+            lambda: processar_pedido(numero=numero, path_ogg=path_ogg, notificar=_notificar)
         )
         if resultado["mensagem"]:
             await asyncio.to_thread(
                 lambda: whatsapp.enviar_mensagem(numero, resultado["mensagem"])
             )
     finally:
-        if os.path.isfile(path_ogg):
+        if not resultado.get("pendente") and os.path.isfile(path_ogg):
             os.remove(path_ogg)
             print(f"[SERVER] Temp removido: {path_ogg}")
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8080)
+    port = int(os.getenv("SERVER_PORT", "8002"))
+    uvicorn.run(app, host='0.0.0.0', port=port)
