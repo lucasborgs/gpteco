@@ -60,18 +60,18 @@ export async function GET() {
         GROUP BY artista, musica
         ORDER BY pedidos DESC
       `, [duasSemanas, semana]),
-      // pico_por_dia_semana
+      // pico_por_dia_semana (converte UTC → Brasília)
       client.query(`
-        SELECT (EXTRACT(DOW FROM timestamp_pedido)::int + 6) % 7 AS dia_semana,
+        SELECT (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
                COUNT(*) AS pedidos
         FROM dim_pedidos
         GROUP BY dia_semana
         ORDER BY dia_semana
       `),
-      // heatmap_pedidos
+      // heatmap_pedidos (converte UTC → Brasília para exibição correta)
       client.query(`
-        SELECT EXTRACT(HOUR FROM timestamp_pedido)::int AS hora,
-               (EXTRACT(DOW FROM timestamp_pedido)::int + 6) % 7 AS dia_semana,
+        SELECT EXTRACT(HOUR FROM timestamp_pedido AT TIME ZONE 'America/Sao_Paulo')::int AS hora,
+               (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
                COUNT(*) AS pedidos
         FROM dim_pedidos
         GROUP BY hora, dia_semana
