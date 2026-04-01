@@ -61,7 +61,7 @@ def top_horarios_semana(limit: int = 5) -> list[dict]:
         inicio = datetime.now() - timedelta(days=7)
         with con.cursor() as cur:
             cur.execute("""
-                SELECT EXTRACT(HOUR FROM timestamp_pedido AT TIME ZONE 'America/Sao_Paulo')::int AS hora,
+                SELECT EXTRACT(HOUR FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int AS hora,
                        COUNT(*) AS pedidos
                 FROM dim_pedidos
                 WHERE timestamp_pedido >= %s
@@ -110,7 +110,7 @@ def pico_por_dia_semana() -> list[dict]:
         # PostgreSQL: EXTRACT(DOW) retorna 0=domingo ... 6=sábado → convertemos para 0=segunda
         with con.cursor() as cur:
             cur.execute("""
-                SELECT (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
+                SELECT (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
                        COUNT(*) AS pedidos
                 FROM dim_pedidos
                 GROUP BY dia_semana
@@ -213,8 +213,8 @@ def heatmap_pedidos() -> list[dict]:
     try:
         with con.cursor() as cur:
             cur.execute("""
-                SELECT EXTRACT(HOUR FROM timestamp_pedido AT TIME ZONE 'America/Sao_Paulo')::int          AS hora,
-                       (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
+                SELECT EXTRACT(HOUR FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int          AS hora,
+                       (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
                        COUNT(*) AS pedidos
                 FROM dim_pedidos
                 GROUP BY hora, dia_semana
