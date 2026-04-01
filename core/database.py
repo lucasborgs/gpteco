@@ -84,6 +84,8 @@ def init_db() -> None:
                 );
             """)
 
+            cur.execute("ALTER TABLE dim_pedidos ADD COLUMN IF NOT EXISTS telefone VARCHAR;")
+
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS dim_pendencias (
                     numero            VARCHAR PRIMARY KEY,
@@ -269,6 +271,24 @@ def registrar_pedido(
         con.commit()
         status = "aceito" if sucesso else f"rejeitado ({motivo_rejeicao})"
         print(f"[DB] Pedido {status}: {numero} → '{musica}' - '{artista}'")
+    finally:
+        con.close()
+
+
+def atualizar_telefone(numero: str, telefone: str) -> None:
+    """
+    Preenche a coluna 'telefone' em todos os pedidos de um número LID.
+    Chamado em background após a resolução LID → telefone via API WAHA.
+    """
+    con = _get_connection()
+    try:
+        with con.cursor() as cur:
+            cur.execute(
+                "UPDATE dim_pedidos SET telefone = %s WHERE numero = %s AND telefone IS NULL",
+                [telefone, numero],
+            )
+        con.commit()
+        print(f"[DB] Telefone atualizado para {numero}: {telefone}")
     finally:
         con.close()
 

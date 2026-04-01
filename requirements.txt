@@ -18,9 +18,3 @@ httpx~=0.28
 
 # === Utilitários ===
 python-dotenv~=1.0
-
-# === Dashboard de analytics (dashboard.py) ===
-gradio~=6.9
-matplotlib~=3.10
-squarify~=0.4
-numpy~=2.1

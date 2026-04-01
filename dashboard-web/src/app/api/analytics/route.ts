@@ -93,11 +93,11 @@ export async function GET() {
         ORDER BY pedidos DESC
         LIMIT 10
       `),
-      // breakdown_ddd
+      // breakdown_ddd (prioriza telefone resolvido via WAHA, fallback para numero)
       client.query(`
-        SELECT numero, COUNT(*) AS pedidos
+        SELECT COALESCE(telefone, numero) AS numero, COUNT(*) AS pedidos
         FROM dim_pedidos
-        GROUP BY numero
+        GROUP BY COALESCE(telefone, numero)
       `),
       // top_artistas
       client.query(`

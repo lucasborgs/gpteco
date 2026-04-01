@@ -289,6 +289,15 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
 # Background tasks (executadas em thread pool para não bloquear o event loop)
 # ---------------------------------------------------------------------------
 
+async def _resolver_telefone_bg(numero: str) -> None:
+    """Resolve LID → telefone via API WAHA e grava no banco (background)."""
+    if "@lid" not in numero:
+        return
+    telefone = await asyncio.to_thread(lambda: whatsapp.resolver_telefone(numero))
+    if telefone:
+        await asyncio.to_thread(lambda: database.atualizar_telefone(numero, telefone))
+
+
 async def _pipeline_texto(numero: str, texto: str) -> None:
     """Processa pedido de texto — com detecção de pendência de confirmação."""
     pendencia = await asyncio.to_thread(lambda: database.buscar_pendencia(numero))
@@ -325,6 +334,8 @@ async def _pipeline_texto(numero: str, texto: str) -> None:
             lambda: whatsapp.enviar_mensagem(numero, resultado["mensagem"])
         )
 
+    await _resolver_telefone_bg(numero)
+
 
 async def _pipeline_audio(numero: str, msg: dict) -> None:
     """Baixa o áudio, processa o pedido e envia resposta ao ouvinte."""
@@ -358,6 +369,8 @@ async def _pipeline_audio(numero: str, msg: dict) -> None:
         if not resultado.get("pendente") and os.path.isfile(path_ogg):
             os.remove(path_ogg)
             print(f"[SERVER] Temp removido: {path_ogg}")
+
+    await _resolver_telefone_bg(numero)
 
 if __name__ == '__main__':
     import uvicorn
