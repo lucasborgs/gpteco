@@ -134,9 +134,12 @@ def processar_pedido(
                     musica=metadados.musica, artista=metadados.artista
                 )
                 return _resultado(False, None, msg, pendente=True)
-            # Texto digitado com baixa confiança → trata como não identificado
-            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="nao_identificado")
-            return _resultado(False, None, config_radio.MSG_NAO_ID)
+            # Texto digitado com baixa confiança → pede confirmação (sem pendência de áudio)
+            database.criar_pendencia(numero, "__texto__", metadados.artista, metadados.musica)
+            msg = config_radio.MSG_CONFIRMACAO.format(
+                musica=metadados.musica, artista=metadados.artista
+            )
+            return _resultado(False, None, msg, pendente=True)
 
         if not metadados.musica or not metadados.artista:
             database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado")

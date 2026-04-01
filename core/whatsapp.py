@@ -115,6 +115,29 @@ def baixar_audio(payload: dict) -> str | None:
     return path_ogg
 
 
+def resolver_telefone(numero: str) -> str | None:
+    """
+    Converte LID para número de telefone real via API WAHA.
+
+    Retorna o número no formato '5511...@c.us' ou None se não resolver.
+    Se o número já estiver em formato @c.us, retorna como está.
+    """
+    if "@lid" not in numero:
+        return numero
+    lid = numero.split("@")[0]
+    try:
+        with httpx.Client(timeout=5) as client:
+            response = client.get(
+                f"{WAHA_URL}/api/{WAHA_SESSION}/lids/{lid}",
+                headers=_headers(),
+            )
+            if response.status_code == 200:
+                return response.json().get("phoneNumber")
+    except Exception:
+        pass
+    return None
+
+
 def enviar_mensagem(numero: str, texto: str) -> bool:
     """
     Envia uma mensagem de texto ao ouvinte via WAHA.

@@ -297,14 +297,22 @@ async def _pipeline_texto(numero: str, texto: str) -> None:
         whatsapp.enviar_mensagem(numero, msg)
 
     if pendencia:
-        # Ouvinte está confirmando a música por texto após transcrição mal interpretada.
-        # Usa o áudio original salvo para a mixagem, mas o texto digitado para a análise LLM.
         path_ogg = pendencia["path_ogg"]
-        resultado = await asyncio.to_thread(
-            lambda: processar_pedido(numero=numero, path_ogg=path_ogg, texto=texto, notificar=_notificar)
-        )
+        if path_ogg == "__texto__":
+            # Confirmação por texto: ouvinte responde "sim" ou digita nome correto
+            if texto.strip().lower() in ("sim", "s", "yes"):
+                # Usa artista/musica normalizados armazenados na pendência
+                texto = f"{pendencia['musica_original']} {pendencia['artista_original']}"
+            resultado = await asyncio.to_thread(
+                lambda: processar_pedido(numero=numero, texto=texto, notificar=_notificar)
+            )
+        else:
+            # Confirmação por áudio: usa o .ogg original salvo para a mixagem
+            resultado = await asyncio.to_thread(
+                lambda: processar_pedido(numero=numero, path_ogg=path_ogg, texto=texto, notificar=_notificar)
+            )
         await asyncio.to_thread(lambda: database.remover_pendencia(numero))
-        if not resultado.get("pendente") and os.path.isfile(path_ogg):
+        if path_ogg != "__texto__" and not resultado.get("pendente") and os.path.isfile(path_ogg):
             os.remove(path_ogg)
             print(f"[SERVER] Temp pendência removido: {path_ogg}")
     else:

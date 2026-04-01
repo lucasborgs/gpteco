@@ -138,6 +138,7 @@ def _fig_heatmap():
     ax.set_xticklabels(_DIAS, fontsize=11)
     ax.set_yticks(np.arange(24) + 0.5)
     ax.set_yticklabels([f"{h:02d}h" for h in range(24)], fontsize=8)
+    ax.invert_yaxis()  # 00h no topo, 23h embaixo (leitura natural)
 
     # Anota valores nas células com pelo menos 1 pedido
     for hora in range(24):

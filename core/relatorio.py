@@ -301,9 +301,13 @@ def breakdown_ddd() -> list[dict]:
             """)
             rows = cur.fetchall()
 
+        from core import whatsapp
+
         ddd_count: dict[str, int] = {}
         for numero, pedidos in rows:
-            base = numero.split("@")[0]
+            # Resolve LID → telefone via API WAHA (apenas para @lid)
+            telefone = whatsapp.resolver_telefone(numero)
+            base = (telefone or numero).split("@")[0]
             ddd = base[2:4] if len(base) >= 12 and base.startswith("55") else "??"
             ddd_count[ddd] = ddd_count.get(ddd, 0) + pedidos
 
