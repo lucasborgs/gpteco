@@ -25,6 +25,8 @@ Fluxo (quando autorizado):
     7. Registro : salva pedido em dim_pedidos (para cooldown futuro)
 """
 
+from __future__ import annotations
+
 import os
 import re
 import shutil
