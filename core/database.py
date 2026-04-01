@@ -2,27 +2,37 @@
 core/database.py
 
 Camada de persistência do acervo musical e controle de pedidos.
-Usa DuckDB como banco local embarcado (arquivo único, sem servidor).
+Usa PostgreSQL (Supabase) via psycopg2.
 
 Tabelas:
-  dim_musicas       : acervo de músicas baixadas
+  dim_musicas   : acervo de músicas baixadas
     - id, artista, musica, file_path, data_inclusao
 
-  dim_pedidos       : histórico de todos os pedidos (aceitos e rejeitados)
+  dim_pedidos   : histórico de todos os pedidos (aceitos e rejeitados)
     - id, numero, artista, musica, timestamp_pedido, sucesso, motivo_rejeicao
     - Usada para rate limiting (6h) e analytics.
 
-  dim_configuracoes : configurações da rádio (key-value)
-    - chave, valor
+  dim_pendencias : pendências de confirmação de transcrição
+    - numero, path_ogg, artista_original, musica_original, timestamp_criacao
 """
 
-import duckdb
 import os
+import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Localização padrão do arquivo do banco (pode ser sobrescrita via .env)
-DB_PATH = os.getenv("DB_PATH", str(Path(__file__).parent.parent / "data" / "acervo.duckdb"))
+import psycopg2
+import psycopg2.extras
+
+
+def _normalizar_texto(texto: str) -> str:
+    """Remove acentos e converte para minúsculas para comparação insensível a diacríticos."""
+    normalizado = unicodedata.normalize("NFD", texto)
+    sem_acentos = "".join(c for c in normalizado if unicodedata.category(c) != "Mn")
+    return sem_acentos.lower().strip()
+
+
+DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 
 # Pasta raiz de músicas — todas as subpastas são escaneadas na inicialização
 MUSICAS_DIR = os.getenv(
@@ -37,10 +47,9 @@ _FILA_ZARA_DIR = os.getenv(
 )
 
 
-def _get_connection() -> duckdb.DuckDBPyConnection:
-    """Abre (ou cria) o arquivo do banco e retorna a conexão."""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    return duckdb.connect(DB_PATH)
+def _get_connection() -> psycopg2.extensions.connection:
+    """Abre e retorna uma conexão com o banco PostgreSQL."""
+    return psycopg2.connect(DATABASE_URL)
 
 
 def init_db() -> None:
@@ -50,62 +59,53 @@ def init_db() -> None:
     """
     con = _get_connection()
     try:
-        con.execute("CREATE SEQUENCE IF NOT EXISTS seq_dim_musicas START 1;")
-        con.execute("""
-            CREATE TABLE IF NOT EXISTS dim_musicas (
-                id            INTEGER   DEFAULT nextval('seq_dim_musicas') PRIMARY KEY,
-                artista       VARCHAR   NOT NULL,
-                musica        VARCHAR   NOT NULL,
-                file_path     VARCHAR   NOT NULL,
-                data_inclusao TIMESTAMP DEFAULT current_timestamp
-            );
-        """)
+        with con.cursor() as cur:
+            cur.execute("CREATE SEQUENCE IF NOT EXISTS seq_dim_musicas START 1;")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS dim_musicas (
+                    id            INTEGER   DEFAULT nextval('seq_dim_musicas') PRIMARY KEY,
+                    artista       VARCHAR   NOT NULL,
+                    musica        VARCHAR   NOT NULL,
+                    file_path     VARCHAR   NOT NULL,
+                    data_inclusao TIMESTAMP DEFAULT current_timestamp
+                );
+            """)
 
-        con.execute("CREATE SEQUENCE IF NOT EXISTS seq_dim_pedidos START 1;")
-        con.execute("""
-            CREATE TABLE IF NOT EXISTS dim_pedidos (
-                id               INTEGER   DEFAULT nextval('seq_dim_pedidos') PRIMARY KEY,
-                numero           VARCHAR   NOT NULL,
-                artista          VARCHAR,
-                musica           VARCHAR,
-                timestamp_pedido TIMESTAMP DEFAULT current_timestamp,
-                sucesso          BOOLEAN   DEFAULT TRUE,
-                motivo_rejeicao  VARCHAR   DEFAULT NULL
-            );
-        """)
+            cur.execute("CREATE SEQUENCE IF NOT EXISTS seq_dim_pedidos START 1;")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS dim_pedidos (
+                    id               INTEGER   DEFAULT nextval('seq_dim_pedidos') PRIMARY KEY,
+                    numero           VARCHAR   NOT NULL,
+                    artista          VARCHAR,
+                    musica           VARCHAR,
+                    timestamp_pedido TIMESTAMP DEFAULT current_timestamp,
+                    sucesso          BOOLEAN   DEFAULT TRUE,
+                    motivo_rejeicao  VARCHAR   DEFAULT NULL
+                );
+            """)
 
-        # Migração: adiciona colunas novas em bancos existentes (idempotente)
-        colunas = {
-            row[0]
-            for row in con.execute(
-                "SELECT column_name FROM information_schema.columns WHERE table_name = 'dim_pedidos'"
-            ).fetchall()
-        }
-        if "sucesso" not in colunas:
-            con.execute("ALTER TABLE dim_pedidos ADD COLUMN sucesso BOOLEAN DEFAULT TRUE")
-        if "motivo_rejeicao" not in colunas:
-            con.execute("ALTER TABLE dim_pedidos ADD COLUMN motivo_rejeicao VARCHAR DEFAULT NULL")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS dim_pendencias (
+                    numero            VARCHAR PRIMARY KEY,
+                    path_ogg          VARCHAR NOT NULL,
+                    artista_original  VARCHAR,
+                    musica_original   VARCHAR,
+                    timestamp_criacao TIMESTAMP DEFAULT current_timestamp
+                );
+            """)
 
-        con.execute("""
-            CREATE TABLE IF NOT EXISTS dim_configuracoes (
-                chave VARCHAR PRIMARY KEY,
-                valor TEXT NOT NULL
-            );
-        """)
+            cur.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
 
         con.commit()
         print("[DB] Schema inicializado com sucesso.")
-
-        # Seed de configurações padrão (late import evita circular dependency)
-        from core import config_radio
-        config_radio.seed_defaults()
     finally:
         con.close()
 
 
 def buscar_musica(artista: str, musica: str) -> str | None:
     """
-    Procura no acervo por artista + música (case-insensitive).
+    Procura no acervo por artista + música com normalização de acentos e case.
+    Usa unaccent + LOWER no PostgreSQL para filtrar server-side.
 
     Retorna:
         str  : caminho absoluto do arquivo se encontrado.
@@ -113,25 +113,44 @@ def buscar_musica(artista: str, musica: str) -> str | None:
     """
     con = _get_connection()
     try:
-        resultado = con.execute("""
-            SELECT file_path
-            FROM dim_musicas
-            WHERE lower(trim(artista)) = lower(trim(?))
-              AND lower(trim(musica))  = lower(trim(?))
-            LIMIT 1;
-        """, [artista, musica]).fetchone()
+        with con.cursor() as cur:
+            cur.execute(
+                """
+                SELECT file_path FROM dim_musicas
+                WHERE unaccent(LOWER(artista)) = unaccent(LOWER(%s))
+                  AND unaccent(LOWER(musica))  = unaccent(LOWER(%s))
+                LIMIT 1
+                """,
+                [artista.strip(), musica.strip()],
+            )
+            row = cur.fetchone()
 
-        if resultado:
-            file_path = resultado[0]
-            # Valida se o arquivo ainda existe fisicamente
-            if os.path.isfile(file_path):
-                print(f"[DB] Música encontrada no acervo: {file_path}")
-                return file_path
-            else:
-                print(f"[DB] Registro existe mas arquivo não encontrado: {file_path}")
-                return None
+        if not row:
+            print(f"[DB] Música não encontrada no acervo: '{musica}' - '{artista}'")
+            return None
 
-        print(f"[DB] Música não encontrada no acervo: '{musica}' - '{artista}'")
+        file_path = row[0]
+
+        if os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
+            print(f"[DB] Música encontrada no acervo: {file_path}")
+            return file_path
+
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+            print(f"[DB] Arquivo corrompido (0 bytes) removido: {file_path}")
+        else:
+            print(f"[DB] Registro existe mas arquivo não encontrado: {file_path}")
+        try:
+            with con.cursor() as cur:
+                cur.execute("DELETE FROM dim_musicas WHERE file_path = %s", [file_path])
+            con.commit()
+            print("[DB] Registro inválido removido do acervo — será baixado novamente.")
+        except Exception as e:
+            print(f"[DB] Erro ao remover registro inválido ({file_path}): {e}")
+            try:
+                con.rollback()
+            except Exception:
+                pass
         return None
     finally:
         con.close()
@@ -140,11 +159,6 @@ def buscar_musica(artista: str, musica: str) -> str | None:
 def inserir_musica(artista: str, musica: str, file_path: str) -> int:
     """
     Insere um novo registro no acervo após download concluído.
-
-    Args:
-        artista   : nome do artista.
-        musica    : título da música.
-        file_path : caminho absoluto do .mp3 salvo.
 
     Retorna:
         int : id do registro inserido.
@@ -157,15 +171,37 @@ def inserir_musica(artista: str, musica: str, file_path: str) -> int:
 
     con = _get_connection()
     try:
-        con.execute("""
-            INSERT INTO dim_musicas (artista, musica, file_path, data_inclusao)
-            VALUES (?, ?, ?, ?)
-        """, [artista.strip(), musica.strip(), file_path, datetime.now()])
+        with con.cursor() as cur:
+            cur.execute("""
+                INSERT INTO dim_musicas (artista, musica, file_path, data_inclusao)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+            """, [artista.strip(), musica.strip(), file_path, datetime.now()])
+            novo_id = cur.fetchone()[0]
         con.commit()
-
-        novo_id = con.execute("SELECT max(id) FROM dim_musicas").fetchone()[0]
         print(f"[DB] Registro inserido com id={novo_id}: '{musica}' - '{artista}'")
         return novo_id
+    finally:
+        con.close()
+
+
+def verificar_interacao_recente(numero: str, horas: int = 24) -> bool:
+    """
+    Retorna True se o número teve qualquer interação nas últimas N horas.
+    Usado para enviar msg_saudacao apenas uma vez por sessão de 24h.
+    """
+    con = _get_connection()
+    try:
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT max(timestamp_pedido)
+                FROM dim_pedidos
+                WHERE numero = %s
+            """, [numero])
+            resultado = cur.fetchone()
+        if not resultado or resultado[0] is None:
+            return False
+        return (datetime.now() - resultado[0]) < timedelta(hours=horas)
     finally:
         con.close()
 
@@ -180,15 +216,17 @@ def verificar_cooldown(numero: str, horas: int = 6) -> bool:
     """
     con = _get_connection()
     try:
-        resultado = con.execute("""
-            SELECT max(timestamp_pedido)
-            FROM dim_pedidos
-            WHERE numero = ?
-              AND sucesso = TRUE
-        """, [numero]).fetchone()
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT max(timestamp_pedido)
+                FROM dim_pedidos
+                WHERE numero = %s
+                  AND sucesso = TRUE
+            """, [numero])
+            resultado = cur.fetchone()
 
         if not resultado or resultado[0] is None:
-            return True  # Nunca fez pedido
+            return True
 
         ultimo_pedido = resultado[0]
         limite = datetime.now() - timedelta(hours=horas)
@@ -212,30 +250,22 @@ def registrar_pedido(
 ) -> None:
     """
     Registra um pedido em dim_pedidos (aceito ou rejeitado).
-
-    Args:
-        numero          : número de telefone do ouvinte.
-        artista         : nome do artista (pode ser "" se não identificado).
-        musica          : título da música (pode ser "" se não identificado).
-        sucesso         : True se o pedido foi processado com êxito.
-        motivo_rejeicao : motivo da rejeição, se houver
-                          ('cooldown' | 'inapropriado' | 'nao_flashback' |
-                           'nao_identificado' | 'erro_tecnico' | None).
     """
     con = _get_connection()
     try:
-        con.execute("""
-            INSERT INTO dim_pedidos
-                (numero, artista, musica, timestamp_pedido, sucesso, motivo_rejeicao)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, [
-            numero,
-            artista.strip() if artista else "",
-            musica.strip() if musica else "",
-            datetime.now(),
-            sucesso,
-            motivo_rejeicao,
-        ])
+        with con.cursor() as cur:
+            cur.execute("""
+                INSERT INTO dim_pedidos
+                    (numero, artista, musica, timestamp_pedido, sucesso, motivo_rejeicao)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, [
+                numero,
+                artista.strip() if artista else "",
+                musica.strip() if musica else "",
+                datetime.now(),
+                sucesso,
+                motivo_rejeicao,
+            ])
         con.commit()
         status = "aceito" if sucesso else f"rejeitado ({motivo_rejeicao})"
         print(f"[DB] Pedido {status}: {numero} → '{musica}' - '{artista}'")
@@ -264,7 +294,6 @@ def indexar_biblioteca() -> int:
 
     try:
         for root, dirs, files in os.walk(MUSICAS_DIR):
-            # Pula a pasta fila_zara (arquivos temporários de pedidos)
             if os.path.abspath(root).startswith(fila_abs):
                 dirs.clear()
                 continue
@@ -285,16 +314,19 @@ def indexar_biblioteca() -> int:
 
                 file_path = os.path.join(root, file)
 
-                existe = con.execute(
-                    "SELECT 1 FROM dim_musicas WHERE file_path = ?",
-                    [file_path],
-                ).fetchone()
+                with con.cursor() as cur:
+                    cur.execute(
+                        "SELECT 1 FROM dim_musicas WHERE file_path = %s",
+                        [file_path],
+                    )
+                    existe = cur.fetchone()
 
                 if not existe:
-                    con.execute("""
-                        INSERT INTO dim_musicas (artista, musica, file_path, data_inclusao)
-                        VALUES (?, ?, ?, ?)
-                    """, [artista, musica, file_path, datetime.now()])
+                    with con.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO dim_musicas (artista, musica, file_path, data_inclusao)
+                            VALUES (%s, %s, %s, %s)
+                        """, [artista, musica, file_path, datetime.now()])
                     novos += 1
 
         if novos:
@@ -306,18 +338,82 @@ def indexar_biblioteca() -> int:
         con.close()
 
 
-def listar_acervo() -> list[dict]:
+def criar_pendencia(numero: str, path_ogg: str, artista: str, musica: str) -> None:
     """
-    Retorna todos os registros do acervo como lista de dicionários.
-    Útil para debug e relatórios.
+    Salva (ou substitui) uma pendência de confirmação de música para o número.
     """
     con = _get_connection()
     try:
-        rows = con.execute("""
-            SELECT id, artista, musica, file_path, data_inclusao
-            FROM dim_musicas
-            ORDER BY data_inclusao DESC;
-        """).fetchall()
+        with con.cursor() as cur:
+            cur.execute("""
+                INSERT INTO dim_pendencias
+                    (numero, path_ogg, artista_original, musica_original, timestamp_criacao)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (numero) DO UPDATE SET
+                    path_ogg          = EXCLUDED.path_ogg,
+                    artista_original  = EXCLUDED.artista_original,
+                    musica_original   = EXCLUDED.musica_original,
+                    timestamp_criacao = EXCLUDED.timestamp_criacao
+            """, [numero, path_ogg, artista, musica, datetime.now()])
+        con.commit()
+        print(f"[DB] Pendência criada para {numero}: '{musica}' - '{artista}'")
+    finally:
+        con.close()
+
+
+def buscar_pendencia(numero: str) -> dict | None:
+    """
+    Retorna a pendência ativa de um número, ou None se não houver ou tiver expirado.
+    Pendências expiram após 30 minutos.
+    """
+    con = _get_connection()
+    try:
+        with con.cursor() as cur:
+            cur.execute(
+                "SELECT path_ogg, artista_original, musica_original, timestamp_criacao "
+                "FROM dim_pendencias WHERE numero = %s", [numero]
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+
+        path_ogg, artista, musica, ts = row
+        if datetime.now() - ts > timedelta(minutes=30):
+            with con.cursor() as cur:
+                cur.execute("DELETE FROM dim_pendencias WHERE numero = %s", [numero])
+            con.commit()
+            if os.path.isfile(path_ogg):
+                os.remove(path_ogg)
+            print(f"[DB] Pendência expirada para {numero} — .ogg removido.")
+            return None
+
+        return {"path_ogg": path_ogg, "artista_original": artista, "musica_original": musica}
+    finally:
+        con.close()
+
+
+def remover_pendencia(numero: str) -> None:
+    """Remove a pendência de um número sem deletar o .ogg."""
+    con = _get_connection()
+    try:
+        with con.cursor() as cur:
+            cur.execute("DELETE FROM dim_pendencias WHERE numero = %s", [numero])
+        con.commit()
+    finally:
+        con.close()
+
+
+def listar_acervo() -> list[dict]:
+    """Retorna todos os registros do acervo como lista de dicionários."""
+    con = _get_connection()
+    try:
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT id, artista, musica, file_path, data_inclusao
+                FROM dim_musicas
+                ORDER BY data_inclusao DESC;
+            """)
+            rows = cur.fetchall()
 
         return [
             {

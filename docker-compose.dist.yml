@@ -66,16 +66,12 @@ services:
       FILA_ZARA_DIR: /app/workspace/musicas/fila_zara
       QUEUE_DIR: /app/workspace/musicas/queue_pedidos
       TEMP_DIR: /app/workspace/temp
-      DATA_DIR: /app/data
-      DB_PATH: /app/data/acervo.duckdb
       # Pasta do CurrentSong.txt dentro do container (o host é montado via volume abaixo)
       CURRENT_SONG_DIR: /app/workspace/current_song
 
     volumes:
-      # Named volumes — Docker gerencia internamente, sem caminho Windows
+      # Named volume — Docker gerencia internamente, sem caminho Windows
       - temp:/app/workspace/temp
-      - dados:/app/data
-      - whisper_cache:/root/.cache/whisper
       # Bind mount — pasta raiz de músicas acessível pelo Windows e ZaraRadio
       # Defina MUSICAS_DIR no .env com barras normais. Exemplo: C:/LUZ FM/AR/MUSICAS
       - type: bind
@@ -99,6 +95,4 @@ networks:
 
 volumes:
   waha_sessions:
-  whisper_cache:
   temp:
-  dados:

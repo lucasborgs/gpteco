@@ -14,7 +14,7 @@ export default function AudienciaPage() {
 
   const load = () => {
     setLoading(true)
-    fetchAnalytics().then(d => { setData(d); setLoading(false) })
+    fetchAnalytics().then(d => { setData(d) }).catch(console.error).finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
@@ -37,13 +37,13 @@ export default function AudienciaPage() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="h-28 bg-gray-200 rounded-xl animate-pulse" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <MetricCard label="Ouvintes na Tabela" value={ouvinteUnicos} />
           <MetricCard label="Fãs Frequentes" value={fanFrequentes} hint="Tentaram pedir mais de uma vez" />
           <MetricCard label="Demanda Reprimida" value={demandaReprimida} hint="Fora do repertório atual" />

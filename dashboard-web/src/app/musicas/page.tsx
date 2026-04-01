@@ -21,7 +21,7 @@ export default function MusicasPage() {
 
   const load = () => {
     setLoading(true)
-    fetchAnalytics().then(d => { setData(d); setLoading(false) })
+    fetchAnalytics().then(d => { setData(d) }).catch(console.error).finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
@@ -41,13 +41,13 @@ export default function MusicasPage() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="h-28 bg-gray-200 rounded-xl animate-pulse" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <MetricCard label="Total de Pedidos" value={taxa?.total ?? 0} />
           <MetricCard label="Atendidos" value={taxa?.sucesso ?? 0} />
           <MetricCard label="Taxa de Sucesso" value={`${taxa?.taxa_sucesso_pct ?? 0}%`} />

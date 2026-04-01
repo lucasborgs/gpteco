@@ -133,7 +133,16 @@ def _processar_ffmpeg(path_entrada: str, path_saida: str) -> None:
             f"ffmpeg falhou (código {resultado.returncode}):\n{resultado.stderr[-500:]}"
         )
 
-    print(f"[DOWNLOADER] ffmpeg concluído: {os.path.basename(path_saida)}")
+    # Valida que o arquivo foi gerado com conteúdo real
+    tamanho = os.path.getsize(path_saida) if os.path.isfile(path_saida) else 0
+    if tamanho == 0:
+        if os.path.isfile(path_saida):
+            os.remove(path_saida)
+        raise RuntimeError(
+            f"ffmpeg retornou código 0 mas gerou arquivo vazio: {os.path.basename(path_saida)}"
+        )
+
+    print(f"[DOWNLOADER] ffmpeg concluído: {os.path.basename(path_saida)} ({tamanho / 1024:.0f} KB)")
 
 
 def baixar(artista: str, musica: str) -> str:
@@ -153,7 +162,15 @@ def baixar(artista: str, musica: str) -> str:
     os.makedirs(ACERVO_DIR, exist_ok=True)
 
     query = f"{artista} {musica} official audio"
-    path_temp = _baixar_youtube(query)
+    try:
+        path_temp = _baixar_youtube(query)
+    except Exception as e:
+        if "not available" in str(e).lower():
+            query_fallback = f"{artista} {musica} lyrics"
+            print(f"[DOWNLOADER] Vídeo indisponível — tentando fallback: '{query_fallback}'")
+            path_temp = _baixar_youtube(query_fallback)
+        else:
+            raise
 
     nome_arquivo = _sanitizar_nome(f"{artista} - {musica}") + ".mp3"
     path_final = os.path.join(ACERVO_DIR, nome_arquivo)

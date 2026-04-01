@@ -19,6 +19,9 @@ import time
 from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
 
 WAHA_URL: str = os.getenv("WAHA_URL", "http://localhost:3001").rstrip("/")
 WAHA_API_KEY: str = os.getenv("WAHA_API_KEY", "")
