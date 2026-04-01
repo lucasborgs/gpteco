@@ -93,12 +93,19 @@ export async function GET() {
         ORDER BY pedidos DESC
         LIMIT 10
       `),
-      // breakdown_ddd (prioriza telefone resolvido via WAHA, fallback para numero)
+      // breakdown_ddd (usa telefone se a coluna existir, senão fallback para numero)
       client.query(`
-        SELECT COALESCE(telefone, numero) AS numero, COUNT(*) AS pedidos
+        SELECT numero, telefone, COUNT(*) AS pedidos
         FROM dim_pedidos
-        GROUP BY COALESCE(telefone, numero)
-      `),
+        GROUP BY numero, telefone
+      `).catch(() =>
+        // Fallback: coluna telefone ainda não existe no banco
+        client.query(`
+          SELECT numero, NULL AS telefone, COUNT(*) AS pedidos
+          FROM dim_pedidos
+          GROUP BY numero
+        `)
+      ),
       // top_artistas
       client.query(`
         SELECT artista, COUNT(*) AS pedidos
@@ -158,7 +165,8 @@ export async function GET() {
     // --- Transform DDD ---
     const dddCount: Record<string, number> = {}
     dddRaw.rows.forEach(r => {
-      const base = r.numero.split('@')[0]
+      const num = r.telefone || r.numero
+      const base = num.split('@')[0]
       const ddd = base.length >= 12 && base.startsWith('55') ? base.slice(2, 4) : '??'
       dddCount[ddd] = (dddCount[ddd] || 0) + Number(r.pedidos)
     })
