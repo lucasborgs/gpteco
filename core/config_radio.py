@@ -7,7 +7,7 @@ Para alterar o comportamento do sistema, edite as constantes abaixo e faça
 o rebuild da imagem Docker. Não há dependência de banco de dados.
 
 Constantes de identidade/LLM:
-    NOME_RADIO, GENERO_ACEITO, ANO_MAXIMO, PUBLICO_ALVO
+    NOME_RADIO, GENERO_ACEITO, ANO_MAXIMO
 
 Constantes de mensagens ao ouvinte:
     MSG_SUCESSO, MSG_COOLDOWN, MSG_INAPROPRIADO, MSG_NAO_REPERTORIO,
@@ -25,10 +25,9 @@ NOME_RADIO    = "Luz FM"
 GENERO_ACEITO = (
     "todos os gêneros musicais, exceto funk brasileiro atual, "
     "rap nacional/brasileiro e gospel; sertanejo raiz, modão e universitário "
-    "lançados até 2012 são aceitos"
+    "lançados até 2016 são aceitos"
 )
 ANO_MAXIMO    = "sem_restricao"  # ou ex: "2010", "1995"
-PUBLICO_ALVO  = "adulto 30+"
 
 # ---------------------------------------------------------------------------
 # Mensagens enviadas ao ouvinte
@@ -83,7 +82,7 @@ def build_system_prompt() -> str:
 
     return f"""
 Você é o assistente de triagem de pedidos da {NOME_RADIO}, uma rádio FM brasileira.
-Público: {PUBLICO_ALVO}. Programação aceita: {GENERO_ACEITO}.
+Programação aceita: {GENERO_ACEITO}.
 {restricao_ano}
 O texto de entrada é uma transcrição de áudio (STT) de ouvintes, muitas vezes sem pontuação e com erros fonéticos.
 
@@ -92,7 +91,7 @@ Sua tarefa é retornar APENAS um JSON válido, sem markdown (```json), sem comen
 - "is_pedido_musical": booleano. true se contém um pedido de música; false para saudações ou perguntas isoladas.
 - "musica": string. Título da música (vazio "" se não identificado).
 - "artista": string. Nome do artista/banda (vazio "" se não identificado).
-- "is_flashback": booleano. Avalia se a música se encaixa no perfil da rádio. true por PADRÃO. Retorne false APENAS nestes casos: 1) É explicitamente funk brasileiro atual, rap nacional ou gospel. 2) É Sertanejo (raiz/modão/universitário) lançado APÓS 2012. Na dúvida sobre o ano do sertanejo, use false.
+- "is_flashback": booleano. true por PADRÃO. Retorne false APENAS e EXCLUSIVAMENTE nestes casos: 1) É explicitamente funk brasileiro atual, rap nacional ou gospel. 2) É Sertanejo (raiz/modão/universitário) lançado APÓS 2016. Na dúvida sobre o ano do sertanejo, use false. IMPORTANTE: qualquer outro gênero (pop, rock, eletrônica, R&B, country, etc.) de qualquer época DEVE ser true, independentemente do artista ou ano de lançamento. Não use nenhum outro critério para rejeitar músicas.
 - "is_apropriado": booleano. Avalia APENAS o tom da mensagem. Retorne false SOMENTE para ofensas diretas à rádio ou trocadilhos grosseiros com nomes próprios (ex: Tomas Turbando). NUNCA dê false por causa de títulos de músicas.
 - "is_confiante": booleano. true se identificou artista/música com clareza ou conseguiu normalizar erros fonéticos óbvios (ex: "ACEDS" → "AC/DC", "Nikuita" + Elton John → "Nikita"). false se a transcrição for ininteligível ou ambígua após normalização.
 - "is_saudacao": booleano. true se for apenas um cumprimento ("bom dia", "valeu") SEM pedido musical. Só quando is_pedido_musical=false.
