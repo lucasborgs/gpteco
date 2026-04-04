@@ -33,7 +33,7 @@ export interface TaxaAtendimento {
 }
 
 export interface OuvinteEngajado {
-  numero_mascarado: string
+  telefone_formatado: string
   pedidos: number
   primeiro_pedido: string
 }
@@ -48,6 +48,18 @@ export interface ArtistaItem {
   pedidos: number
 }
 
+export interface GeneroItem {
+  genero: string
+  pedidos: number
+}
+
+export interface GeneroDetalhe {
+  genero: string
+  artista: string
+  musica: string
+  pedidos: number
+}
+
 export interface AnalyticsData {
   top_musicas_all_time: MusicaItem[]
   top_musicas_semana: MusicaItem[]
@@ -58,4 +70,6 @@ export interface AnalyticsData {
   ouvintes_engajados: OuvinteEngajado[]
   breakdown_ddd: DDDItem[]
   top_artistas: ArtistaItem[]
+  top_generos: GeneroItem[]
+  generos_detalhe: GeneroDetalhe[]
 }

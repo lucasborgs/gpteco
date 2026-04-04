@@ -95,6 +95,7 @@ Sua tarefa é retornar APENAS um JSON válido, sem markdown (```json), sem comen
 - "is_apropriado": booleano. Avalia APENAS o tom da mensagem. Retorne false SOMENTE para ofensas diretas à rádio ou trocadilhos grosseiros com nomes próprios (ex: Tomas Turbando). NUNCA dê false por causa de títulos de músicas.
 - "is_confiante": booleano. true se identificou artista/música com clareza ou conseguiu normalizar erros fonéticos óbvios (ex: "ACEDS" → "AC/DC", "Nikuita" + Elton John → "Nikita"). false se a transcrição for ininteligível ou ambígua após normalização.
 - "is_saudacao": booleano. true se for apenas um cumprimento ("bom dia", "valeu") SEM pedido musical. Só quando is_pedido_musical=false.
+- "genero": string. Gênero musical da música pedida, em minúsculas. Valores esperados: "pop", "rock", "sertanejo", "mpb", "pagode", "samba", "forró", "axé", "eletrônica", "r&b", "soul", "country", "reggae", "jazz", "blues", "bossa nova", "hip hop", "metal", "punk", "folk", "dance", "disco", "new wave", "indie", "clássico", "romântico", "infantil". Se não identificar o gênero ou is_pedido_musical=false, use "".
 
 REGRAS DE EXTRAÇÃO:
 1. Ordem de triagem: Determine primeiro 'is_pedido_musical'. Se false, todos os demais campos assumem defaults: musica="", artista="", is_flashback=false, is_apropriado=true, is_confiante=true. Apenas 'is_saudacao' deve ser avaliado: true para saudações ("bom dia", "oi", "obrigado"); false para perguntas fora de escopo.
@@ -108,11 +109,11 @@ REGRAS DE EXTRAÇÃO:
 
 EXEMPLOS DE SAÍDA ESPERADA:
 Entrada: "bom dia luzia toca aceds reio tu réu"
-Saída: {{"is_pedido_musical": true, "musica": "Highway to Hell", "artista": "AC/DC", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false}}
+Saída: {{"is_pedido_musical": true, "musica": "Highway to Hell", "artista": "AC/DC", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "genero": "rock"}}
 
 Entrada: "toca uma do zé ramalho ai manda um abraço pro paula tejano"
-Saída: {{"is_pedido_musical": true, "musica": "Chão de Giz", "artista": "Zé Ramalho", "is_flashback": true, "is_apropriado": false, "is_confiante": true, "is_saudacao": false}}
+Saída: {{"is_pedido_musical": true, "musica": "Chão de Giz", "artista": "Zé Ramalho", "is_flashback": true, "is_apropriado": false, "is_confiante": true, "is_saudacao": false, "genero": "mpb"}}
 
 Entrada: "oi passando pra desejar uma ótima tarde"
-Saída: {{"is_pedido_musical": false, "musica": "", "artista": "", "is_flashback": false, "is_apropriado": true, "is_confiante": true, "is_saudacao": true}}
+Saída: {{"is_pedido_musical": false, "musica": "", "artista": "", "is_flashback": false, "is_apropriado": true, "is_confiante": true, "is_saudacao": true, "genero": ""}}
 """.strip()

@@ -47,6 +47,7 @@ class MetadadosMusica:
     is_apropriado: bool
     is_confiante: bool = True
     is_saudacao: bool = False
+    genero: str = ""
 
 
 def analisar(texto_transcrito: str) -> MetadadosMusica:
@@ -112,6 +113,7 @@ def analisar(texto_transcrito: str) -> MetadadosMusica:
         is_apropriado=_to_bool(dados["is_apropriado"]),
         is_confiante=_to_bool(dados["is_confiante"]),
         is_saudacao=_to_bool(dados.get("is_saudacao", False)),
+        genero=str(dados.get("genero", "")).strip(),
     )
 
     print(f"[LLM] is_pedido_musical={metadados.is_pedido_musical}")

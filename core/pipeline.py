@@ -113,13 +113,13 @@ def processar_pedido(
             return _resultado(False, None, None)
 
         if not metadados.is_apropriado:
-            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="inapropriado")
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="inapropriado", genero=metadados.genero)
             return _resultado(False, None, config_radio.MSG_INAPROPRIADO)
 
         # --- Rate limiting por número (após confirmar que é pedido musical) ---
         _log_etapa(0, "Verificação de cooldown")
         if not DISABLE_COOLDOWN and not database.verificar_cooldown(numero):
-            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="cooldown")
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="cooldown", genero=metadados.genero)
             return _resultado(False, None, config_radio.MSG_COOLDOWN)
 
         # Baixa confiança na identificação (transcrição possivelmente corrompida).
@@ -146,7 +146,7 @@ def processar_pedido(
             return _resultado(False, None, config_radio.MSG_NAO_ID)
 
         if not metadados.is_flashback:
-            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="nao_flashback")
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="nao_flashback", genero=metadados.genero)
             msg = config_radio.MSG_NAO_REPERTORIO.format(musica=metadados.musica, artista=metadados.artista)
             return _resultado(False, None, msg)
 
@@ -202,7 +202,7 @@ def processar_pedido(
         # Registrado APÓS enfileirar bem-sucedido: cooldown só ativa se a música
         # foi entregue na fila. Se enfileirar lançar exceção, o except registra
         # o pedido como erro_tecnico (sem ativar cooldown para o ouvinte).
-        database.registrar_pedido(numero, metadados.artista, metadados.musica)
+        database.registrar_pedido(numero, metadados.artista, metadados.musica, genero=metadados.genero)
 
         msg = config_radio.MSG_SUCESSO.format(artista=metadados.artista, musica=metadados.musica)
         _log_separador(f"Concluído: {nome_saida}")

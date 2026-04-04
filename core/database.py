@@ -85,6 +85,7 @@ def init_db() -> None:
             """)
 
             cur.execute("ALTER TABLE dim_pedidos ADD COLUMN IF NOT EXISTS telefone VARCHAR;")
+            cur.execute("ALTER TABLE dim_pedidos ADD COLUMN IF NOT EXISTS genero VARCHAR;")
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS dim_pendencias (
@@ -249,6 +250,7 @@ def registrar_pedido(
     musica: str,
     sucesso: bool = True,
     motivo_rejeicao: str | None = None,
+    genero: str = "",
 ) -> None:
     """
     Registra um pedido em dim_pedidos (aceito ou rejeitado).
@@ -258,8 +260,8 @@ def registrar_pedido(
         with con.cursor() as cur:
             cur.execute("""
                 INSERT INTO dim_pedidos
-                    (numero, artista, musica, timestamp_pedido, sucesso, motivo_rejeicao)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (numero, artista, musica, timestamp_pedido, sucesso, motivo_rejeicao, genero)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, [
                 numero,
                 artista.strip() if artista else "",
@@ -267,6 +269,7 @@ def registrar_pedido(
                 datetime.now(),
                 sucesso,
                 motivo_rejeicao,
+                genero.strip() if genero else "",
             ])
         con.commit()
         status = "aceito" if sucesso else f"rejeitado ({motivo_rejeicao})"

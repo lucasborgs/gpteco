@@ -5,8 +5,9 @@ import { fetchAnalytics } from '@/lib/api'
 import { AnalyticsData } from '@/types/analytics'
 import { MetricCard } from '@/components/ui/MetricCard'
 import { DataTable } from '@/components/ui/DataTable'
+import { DateFilter } from '@/components/ui/DateFilter'
 import { BarMusicas } from '@/components/charts/BarMusicas'
-import { TreemapArtistas } from '@/components/charts/TreemapArtistas'
+import { TreemapGeneros } from '@/components/charts/TreemapGeneros'
 
 const TENDENCIA_CONFIG = {
   up:   { label: '↑ subiu',   className: 'text-green-600 font-medium' },
@@ -18,26 +19,35 @@ const TENDENCIA_CONFIG = {
 export default function MusicasPage() {
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [days, setDays] = useState('all')
 
-  const load = () => {
+  const load = (d?: string) => {
     setLoading(true)
-    fetchAnalytics().then(d => { setData(d) }).catch(console.error).finally(() => setLoading(false))
+    fetchAnalytics(d ?? days).then(setData).catch(console.error).finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
+
+  const handleDaysChange = (d: string) => {
+    setDays(d)
+    load(d)
+  }
 
   const taxa = data?.taxa_atendimento
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-heading text-content-primary">Músicas</h1>
-        <button
-          onClick={load}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors"
-        >
-          Atualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <DateFilter value={days} onChange={handleDaysChange} />
+          <button
+            onClick={() => load()}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors"
+          >
+            Atualizar
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -69,9 +79,9 @@ export default function MusicasPage() {
           </div>
           <div className="bg-white rounded-xl border border-border shadow-card p-5">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-content-secondary mb-4">
-              Artistas Mais Pedidos
+              Gêneros Mais Pedidos
             </h2>
-            <TreemapArtistas data={data?.top_artistas ?? []} />
+            <TreemapGeneros data={data?.top_generos ?? []} detalhe={data?.generos_detalhe ?? []} />
           </div>
         </div>
       )}

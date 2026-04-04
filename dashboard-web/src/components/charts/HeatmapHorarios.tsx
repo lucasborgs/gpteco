@@ -11,11 +11,11 @@ const DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 function getColor(value: number, max: number): string {
   if (value === 0 || max === 0) return '#f3f4f6'
   const ratio = value / max
-  if (ratio < 0.2) return '#fed7aa'
-  if (ratio < 0.4) return '#fb923c'
-  if (ratio < 0.6) return '#f97316'
-  if (ratio < 0.8) return '#ea580c'
-  return '#c2410c'
+  if (ratio < 0.2) return '#dcfce7'
+  if (ratio < 0.4) return '#86efac'
+  if (ratio < 0.6) return '#22c55e'
+  if (ratio < 0.8) return '#16a34a'
+  return '#166534'
 }
 
 export function HeatmapHorarios({ data }: Props) {
@@ -56,7 +56,7 @@ export function HeatmapHorarios({ data }: Props) {
       </div>
       <div className="flex items-center gap-2 mt-3">
         <span className="text-xs text-content-secondary">Menos</span>
-        {['#f3f4f6', '#fed7aa', '#fb923c', '#f97316', '#ea580c', '#c2410c'].map(c => (
+        {['#f3f4f6', '#dcfce7', '#86efac', '#22c55e', '#16a34a', '#166534'].map(c => (
           <div key={c} className="w-5 h-3 rounded-sm" style={{ backgroundColor: c }} />
         ))}
         <span className="text-xs text-content-secondary">Mais</span>

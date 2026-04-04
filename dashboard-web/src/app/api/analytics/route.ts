@@ -1,16 +1,27 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
 const DIAS = ['Segunda', 'Terca', 'Quarta', 'Quinta', 'Sexta', 'Sabado', 'Domingo']
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const client = await pool.connect()
   try {
     const now = new Date()
+    const daysParam = request.nextUrl.searchParams.get('days')
+    const days = daysParam && ['7', '15', '30'].includes(daysParam) ? Number(daysParam) : null
+
+    // dataInicio: filtro global (null = todo período)
+    const dataInicio = days ? new Date(now.getTime() - days * 24 * 60 * 60 * 1000) : null
+    // Filtros para tendência: sempre baseados na última semana relativa ao período
     const semana = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
     const duasSemanas = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+
+    // Helper: adiciona WHERE de data se filtro ativo
+    const dateFilter = (alias: string, paramIndex: number) =>
+      dataInicio ? `AND ${alias} >= $${paramIndex}` : ''
+    const dateParams = dataInicio ? [dataInicio] : []
 
     const [
       topAllTime,
@@ -23,17 +34,20 @@ export async function GET() {
       ouvintes,
       dddRaw,
       artistas,
+      generos,
+      generosDetalhe,
     ] = await Promise.all([
-      // top_musicas_all_time
+      // top_musicas (filtrado pelo período selecionado)
       client.query(`
         SELECT artista, musica, COUNT(*) AS pedidos
         FROM dim_pedidos
         WHERE sucesso = TRUE AND artista != '' AND musica != ''
+          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
         GROUP BY artista, musica
         ORDER BY pedidos DESC
         LIMIT 10
-      `),
-      // top_musicas_semana
+      `, dateParams),
+      // top_musicas_semana (sempre última semana)
       client.query(`
         SELECT artista, musica, COUNT(*) AS pedidos
         FROM dim_pedidos
@@ -65,56 +79,80 @@ export async function GET() {
         SELECT (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
                COUNT(*) AS pedidos
         FROM dim_pedidos
+        ${dataInicio ? 'WHERE timestamp_pedido >= $1' : ''}
         GROUP BY dia_semana
         ORDER BY dia_semana
-      `),
-      // heatmap_pedidos (converte UTC → Brasília para exibição correta)
+      `, dateParams),
+      // heatmap_pedidos (converte UTC → Brasília)
       client.query(`
         SELECT EXTRACT(HOUR FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int AS hora,
                (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
                COUNT(*) AS pedidos
         FROM dim_pedidos
+        ${dataInicio ? 'WHERE timestamp_pedido >= $1' : ''}
         GROUP BY hora, dia_semana
-      `),
-      // taxa_atendimento (semanal, sem saudacoes)
+      `, dateParams),
+      // taxa_atendimento (filtrado pelo período)
       client.query(`
         SELECT sucesso, motivo_rejeicao, COUNT(*) AS qtd
         FROM dim_pedidos
-        WHERE timestamp_pedido >= $1
-          AND (motivo_rejeicao IS NULL OR motivo_rejeicao != 'saudacao')
+        WHERE (motivo_rejeicao IS NULL OR motivo_rejeicao != 'saudacao')
+          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
         GROUP BY sucesso, motivo_rejeicao
-      `, [semana]),
-      // ouvintes_engajados
+      `, dateParams),
+      // ouvintes_engajados (usa telefone real quando disponível)
       client.query(`
-        SELECT numero, COUNT(*) AS pedidos, MIN(timestamp_pedido) AS primeiro_pedido
+        SELECT COALESCE(telefone, numero) AS numero_real, COUNT(*) AS pedidos, MIN(timestamp_pedido) AS primeiro_pedido
         FROM dim_pedidos
         WHERE sucesso = TRUE
-        GROUP BY numero
+          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+        GROUP BY numero_real
         ORDER BY pedidos DESC
         LIMIT 10
-      `),
-      // breakdown_ddd (usa telefone se a coluna existir, senão fallback para numero)
+      `, dateParams),
+      // breakdown_ddd (usa telefone se a coluna existir)
       client.query(`
         SELECT numero, telefone, COUNT(*) AS pedidos
         FROM dim_pedidos
+        ${dataInicio ? 'WHERE timestamp_pedido >= $1' : ''}
         GROUP BY numero, telefone
-      `).catch(() =>
-        // Fallback: coluna telefone ainda não existe no banco
+      `, dateParams).catch(() =>
         client.query(`
           SELECT numero, NULL AS telefone, COUNT(*) AS pedidos
           FROM dim_pedidos
+          ${dataInicio ? 'WHERE timestamp_pedido >= $1' : ''}
           GROUP BY numero
-        `)
+        `, dateParams)
       ),
-      // top_artistas
+      // top_artistas (filtrado pelo período)
       client.query(`
         SELECT artista, COUNT(*) AS pedidos
         FROM dim_pedidos
         WHERE sucesso = TRUE AND artista != ''
+          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
         GROUP BY artista
         ORDER BY pedidos DESC
         LIMIT 15
-      `),
+      `, dateParams),
+      // top_generos
+      client.query(`
+        SELECT genero, COUNT(*) AS pedidos
+        FROM dim_pedidos
+        WHERE sucesso = TRUE AND genero IS NOT NULL AND genero != ''
+          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+        GROUP BY genero
+        ORDER BY pedidos DESC
+        LIMIT 10
+      `, dateParams).catch(() => ({ rows: [] })),
+      // generos_detalhe (músicas por gênero, para tooltip)
+      client.query(`
+        SELECT genero, artista, musica, COUNT(*) AS pedidos
+        FROM dim_pedidos
+        WHERE sucesso = TRUE AND genero IS NOT NULL AND genero != ''
+          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+        GROUP BY genero, artista, musica
+        ORDER BY genero, pedidos DESC
+      `, dateParams).catch(() => ({ rows: [] })),
     ])
 
     // --- Transform tendencia ---
@@ -151,10 +189,17 @@ export async function GET() {
 
     // --- Transform ouvintes ---
     const ouvintes_engajados = ouvintes.rows.map(r => {
-      const base = r.numero.split('@')[0]
-      const mascarado = base.length >= 4 ? `****${base.slice(-4)}` : '****'
+      const base = (r.numero_real || '').split('@')[0]
+      let telefone_formatado = base
+      if (base.length >= 12 && base.startsWith('55')) {
+        const ddd = base.slice(2, 4)
+        const num = base.slice(4)
+        telefone_formatado = num.length === 9
+          ? `+55 (${ddd}) ${num.slice(0, 5)}-${num.slice(5)}`
+          : `+55 (${ddd}) ${num.slice(0, 4)}-${num.slice(4)}`
+      }
       return {
-        numero_mascarado: mascarado,
+        telefone_formatado,
         pedidos: Number(r.pedidos),
         primeiro_pedido: r.primeiro_pedido
           ? new Date(r.primeiro_pedido).toLocaleDateString('pt-BR')
@@ -192,6 +237,8 @@ export async function GET() {
       ouvintes_engajados,
       breakdown_ddd,
       top_artistas: artistas.rows.map(r => ({ artista: r.artista, pedidos: Number(r.pedidos) })),
+      top_generos: generos.rows.map(r => ({ genero: r.genero, pedidos: Number(r.pedidos) })),
+      generos_detalhe: generosDetalhe.rows.map(r => ({ genero: r.genero, artista: r.artista, musica: r.musica, pedidos: Number(r.pedidos) })),
     })
   } catch (err) {
     console.error('[API] Analytics error:', err)
