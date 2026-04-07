@@ -46,7 +46,7 @@ export default function HorariosPage() {
         {loading ? (
           <div className="h-64 bg-gray-200 rounded-xl animate-pulse" />
         ) : (
-          <HeatmapHorarios data={data?.heatmap_pedidos ?? []} />
+          <HeatmapHorarios data={data?.heatmap_pedidos ?? []} detalhe={data?.heatmap_detalhe ?? []} />
         )}
       </div>
 

@@ -60,12 +60,21 @@ export interface GeneroDetalhe {
   pedidos: number
 }
 
+export interface HeatmapDetalhe {
+  hora: number
+  dia_semana: number
+  artista: string
+  musica: string
+  pedidos: number
+}
+
 export interface AnalyticsData {
   top_musicas_all_time: MusicaItem[]
   top_musicas_semana: MusicaItem[]
   tendencia_musicas: TendenciaItem[]
   pico_por_dia_semana: DiaSemanaItem[]
   heatmap_pedidos: HeatmapItem[]
+  heatmap_detalhe: HeatmapDetalhe[]
   taxa_atendimento: TaxaAtendimento
   ouvintes_engajados: OuvinteEngajado[]
   breakdown_ddd: DDDItem[]

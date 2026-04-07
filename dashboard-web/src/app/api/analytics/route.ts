@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
       generos,
       generosDetalhe,
       fasFrequentes,
+      heatmapDetalhe,
     ] = await Promise.all([
       // top_musicas (filtrado pelo período selecionado)
       client.query(`
@@ -92,6 +93,17 @@ export async function GET(request: NextRequest) {
         FROM dim_pedidos
         ${dataInicio ? 'WHERE timestamp_pedido >= $1' : ''}
         GROUP BY hora, dia_semana
+      `, dateParams),
+      // heatmap_detalhe (músicas por hora×dia, para tooltip)
+      client.query(`
+        SELECT EXTRACT(HOUR FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int AS hora,
+               (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
+               artista, musica, COUNT(*) AS pedidos
+        FROM dim_pedidos
+        WHERE sucesso = TRUE AND artista != '' AND musica != ''
+          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+        GROUP BY hora, dia_semana, artista, musica
+        ORDER BY hora, dia_semana, pedidos DESC
       `, dateParams),
       // taxa_atendimento (filtrado pelo período)
       client.query(`
@@ -243,6 +255,13 @@ export async function GET(request: NextRequest) {
       heatmap_pedidos: heatmap.rows.map(r => ({
         hora: Number(r.hora),
         dia_semana: Number(r.dia_semana),
+        pedidos: Number(r.pedidos),
+      })),
+      heatmap_detalhe: heatmapDetalhe.rows.map(r => ({
+        hora: Number(r.hora),
+        dia_semana: Number(r.dia_semana),
+        artista: r.artista,
+        musica: r.musica,
         pedidos: Number(r.pedidos),
       })),
       taxa_atendimento: { total, sucesso: aceitos, recusado: recusados, taxa_sucesso_pct, por_motivo },

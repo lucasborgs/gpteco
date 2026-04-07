@@ -24,8 +24,9 @@ Função pública:
 NOME_RADIO    = "Luz FM"
 GENERO_ACEITO = (
     "todos os gêneros musicais, exceto funk brasileiro atual, "
-    "rap nacional/brasileiro e gospel; sertanejo raiz, modão e universitário "
-    "lançados até 2016 são aceitos"
+    "rap nacional/brasileiro e gospel; todo sertanejo é aceito, EXCETO "
+    "os subgêneros modernos: piseiro, sofrência eletrônica, feminejo, "
+    "sertanejo funk e arrocha"
 )
 ANO_MAXIMO    = "sem_restricao"  # ou ex: "2010", "1995"
 
@@ -91,7 +92,7 @@ Sua tarefa é retornar APENAS um JSON válido, sem markdown (```json), sem comen
 - "is_pedido_musical": booleano. true se contém um pedido de música; false para saudações ou perguntas isoladas.
 - "musica": string. Título da música (vazio "" se não identificado).
 - "artista": string. Nome do artista/banda (vazio "" se não identificado).
-- "is_flashback": booleano. true por PADRÃO. Retorne false APENAS e EXCLUSIVAMENTE nestes casos: 1) É explicitamente funk brasileiro atual, rap nacional ou gospel. 2) É Sertanejo (raiz/modão/universitário) lançado APÓS 2016. Na dúvida sobre o ano do sertanejo, use true — prefira aceitar a rejeitar indevidamente. IMPORTANTE: pagode, samba e swingue NÃO são funk — artistas como Molejo, Exaltasamba, Raça Negra etc. DEVEM ser true. Qualquer outro gênero (pop, rock, eletrônica, R&B, country, etc.) de qualquer época DEVE ser true, independentemente do artista ou ano de lançamento. Não use nenhum outro critério para rejeitar músicas.
+- "is_flashback": booleano. true por PADRÃO. Retorne false APENAS e EXCLUSIVAMENTE nestes casos: 1) É explicitamente funk brasileiro atual, rap nacional/brasileiro ou gospel. 2) É sertanejo de subgênero moderno: piseiro, sofrência eletrônica, feminejo, sertanejo funk ou arrocha. IMPORTANTE: sertanejo raiz, modão, sertanejo romântico e sertanejo universitário clássico são ACEITOS (true), independentemente do ano. Pagode, samba e swingue NÃO são funk — artistas como Molejo, Exaltasamba, Raça Negra etc. DEVEM ser true. Qualquer outro gênero (pop, rock, eletrônica, R&B, country, etc.) de qualquer época DEVE ser true. Não use nenhum outro critério para rejeitar músicas.
 - "is_apropriado": booleano. Avalia APENAS o tom da mensagem. Retorne false SOMENTE para ofensas diretas à rádio ou trocadilhos grosseiros com nomes próprios (ex: Tomas Turbando). NUNCA dê false por causa de títulos de músicas.
 - "is_confiante": booleano. true se identificou artista/música com clareza ou conseguiu normalizar erros fonéticos óbvios (ex: "ACEDS" → "AC/DC", "Nikuita" + Elton John → "Nikita"). false se a transcrição for ininteligível ou ambígua após normalização.
 - "is_saudacao": booleano. true se for apenas um cumprimento ("bom dia", "valeu") SEM pedido musical. Só quando is_pedido_musical=false.
