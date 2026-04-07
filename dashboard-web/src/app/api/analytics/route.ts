@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
       tendenciaAnterior,
       picoDia,
       heatmap,
+      heatmapDetalhe,
       taxa,
       ouvintes,
       dddRaw,
@@ -37,7 +38,6 @@ export async function GET(request: NextRequest) {
       generos,
       generosDetalhe,
       fasFrequentes,
-      heatmapDetalhe,
     ] = await Promise.all([
       // top_musicas (filtrado pelo período selecionado)
       client.query(`
