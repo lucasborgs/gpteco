@@ -37,6 +37,11 @@ services:
       WHATSAPP_HOOK_EVENTS: "message,session.status"
 
       WHATSAPP_DEFAULT_ENGINE: NOWEB
+
+      # NOWEB store — necessário para resolver LID → telefone
+      WHATSAPP_NOWEB_STORE_ENABLED: "true"
+      WHATSAPP_NOWEB_STORE_FULL_SYNC: "true"
+
       WHATSAPP_START_SESSION: default
 
       TZ: America/Sao_Paulo
