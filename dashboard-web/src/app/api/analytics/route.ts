@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
       artistas,
       generos,
       generosDetalhe,
+      fasFrequentes,
     ] = await Promise.all([
       // top_musicas (filtrado pelo período selecionado)
       client.query(`
@@ -153,6 +154,17 @@ export async function GET(request: NextRequest) {
         GROUP BY genero, artista, musica
         ORDER BY genero, pedidos DESC
       `, dateParams).catch(() => ({ rows: [] })),
+      // fãs frequentes (ouvintes com 2+ pedidos bem-sucedidos)
+      client.query(`
+        SELECT COUNT(*) AS total FROM (
+          SELECT COALESCE(telefone, numero) AS ouvinte
+          FROM dim_pedidos
+          WHERE sucesso = TRUE
+            ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+          GROUP BY ouvinte
+          HAVING COUNT(*) >= 2
+        ) sub
+      `, dateParams),
     ])
 
     // --- Transform tendencia ---
@@ -239,6 +251,7 @@ export async function GET(request: NextRequest) {
       top_artistas: artistas.rows.map(r => ({ artista: r.artista, pedidos: Number(r.pedidos) })),
       top_generos: generos.rows.map(r => ({ genero: r.genero, pedidos: Number(r.pedidos) })),
       generos_detalhe: generosDetalhe.rows.map(r => ({ genero: r.genero, artista: r.artista, musica: r.musica, pedidos: Number(r.pedidos) })),
+      fas_frequentes: Number(fasFrequentes.rows[0]?.total ?? 0),
     })
   } catch (err) {
     console.error('[API] Analytics error:', err)

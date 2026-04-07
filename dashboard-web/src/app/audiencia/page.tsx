@@ -28,7 +28,7 @@ export default function AudienciaPage() {
 
   const taxa = data?.taxa_atendimento
   const ouvinteUnicos = new Set(data?.ouvintes_engajados.map(o => o.telefone_formatado)).size
-  const fanFrequentes = taxa?.por_motivo?.cooldown ?? 0
+  const fanFrequentes = data?.fas_frequentes ?? 0
   const demandaReprimida = taxa?.por_motivo?.nao_flashback ?? 0
 
   return (

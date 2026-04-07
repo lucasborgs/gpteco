@@ -37,6 +37,10 @@ services:
       # Engine NOWEB = Baileys (mais leve, sem Chrome)
       WHATSAPP_DEFAULT_ENGINE: NOWEB
 
+      # NOWEB store — necessário para resolver LID → telefone
+      WHATSAPP_NOWEB_STORE_ENABLED: "true"
+      WHATSAPP_NOWEB_STORE_FULL_SYNC: "true"
+
       # Iniciar automaticamente a sessão "default"
       WHATSAPP_START_SESSION: default
 

@@ -72,4 +72,5 @@ export interface AnalyticsData {
   top_artistas: ArtistaItem[]
   top_generos: GeneroItem[]
   generos_detalhe: GeneroDetalhe[]
+  fas_frequentes: number
 }

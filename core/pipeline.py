@@ -162,7 +162,7 @@ def processar_pedido(
         else:
             _log_etapa(4, "Download dinâmico (YouTube)")
             if notificar:
-                notificar("⬇️ Sua música não está no acervo ainda. Aguarde, estou buscando...")
+                notificar("🔎 Sua música não está no acervo ainda. Aguarde, estou buscando...")
             file_path = downloader.baixar(metadados.artista, metadados.musica)
 
         # --- Etapa 5: Mixagem (somente se havia voz para misturar) ---

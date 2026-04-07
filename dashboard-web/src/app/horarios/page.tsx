@@ -41,7 +41,7 @@ export default function HorariosPage() {
 
       <div className="bg-white rounded-xl border border-border shadow-card p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-content-secondary mb-4">
-          Mapa de Calor — Hora × Dia da Semana
+          Mapa da Audiência
         </h2>
         {loading ? (
           <div className="h-64 bg-gray-200 rounded-xl animate-pulse" />
@@ -52,7 +52,7 @@ export default function HorariosPage() {
 
       <div className="bg-white rounded-xl border border-border shadow-card p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-content-secondary mb-4">
-          Volume por Dia da Semana — Histórico
+          Volume por Dia da Semana
         </h2>
         {loading ? (
           <div className="h-56 bg-gray-200 rounded-xl animate-pulse" />
