@@ -12,22 +12,24 @@ import { BarDDD } from '@/components/charts/BarDDD'
 export default function AudienciaPage() {
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [days, setDays] = useState('all')
+  const [from, setFrom] = useState<string | null>(null)
+  const [to, setTo] = useState<string | null>(null)
 
-  const load = (d?: string) => {
+  const load = (f?: string | null, t?: string | null) => {
     setLoading(true)
-    fetchAnalytics(d ?? days).then(setData).catch(console.error).finally(() => setLoading(false))
+    fetchAnalytics(f ?? from, t ?? to).then(setData).catch(console.error).finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
 
-  const handleDaysChange = (d: string) => {
-    setDays(d)
-    load(d)
+  const handleDateChange = (f: string | null, t: string | null) => {
+    setFrom(f)
+    setTo(t)
+    load(f, t)
   }
 
   const taxa = data?.taxa_atendimento
-  const ouvinteUnicos = new Set(data?.ouvintes_engajados.map(o => o.telefone_formatado)).size
+  const totalOuvintes = data?.ouvintes_engajados.length ?? 0
   const fanFrequentes = data?.fas_frequentes ?? 0
   const demandaReprimida = taxa?.por_motivo?.nao_flashback ?? 0
 
@@ -36,7 +38,7 @@ export default function AudienciaPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-heading text-content-primary">Audiência</h1>
         <div className="flex items-center gap-2">
-          <DateFilter value={days} onChange={handleDaysChange} />
+          <DateFilter from={from} to={to} onChange={handleDateChange} />
           <button
             onClick={() => load()}
             className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors"
@@ -54,7 +56,7 @@ export default function AudienciaPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <MetricCard label="Ouvintes na Tabela" value={ouvinteUnicos} />
+          <MetricCard label="Ouvintes na Tabela" value={totalOuvintes} />
           <MetricCard label="Fãs Frequentes" value={fanFrequentes} hint="Tentaram pedir mais de uma vez" />
           <MetricCard label="Demanda Reprimida" value={demandaReprimida} hint="Fora do repertório atual" />
         </div>
@@ -86,7 +88,7 @@ export default function AudienciaPage() {
         <div className="bg-white rounded-xl border border-border shadow-card">
           <div className="px-4 py-3 bg-gray-50 border-b border-border rounded-t-xl">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-content-secondary">
-              Ouvintes Mais Engajados
+              Todos os Ouvintes
             </h2>
           </div>
           <DataTable

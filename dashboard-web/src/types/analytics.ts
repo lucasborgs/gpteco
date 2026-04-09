@@ -1,15 +1,8 @@
 export interface MusicaItem {
   artista: string
   musica: string
+  genero: string
   pedidos: number
-}
-
-export interface TendenciaItem {
-  posicao: number
-  artista: string
-  musica: string
-  pedidos: number
-  tendencia: 'up' | 'down' | 'same' | 'new'
 }
 
 export interface DiaSemanaItem {
@@ -70,8 +63,6 @@ export interface HeatmapDetalhe {
 
 export interface AnalyticsData {
   top_musicas_all_time: MusicaItem[]
-  top_musicas_semana: MusicaItem[]
-  tendencia_musicas: TendenciaItem[]
   pico_por_dia_semana: DiaSemanaItem[]
   heatmap_pedidos: HeatmapItem[]
   heatmap_detalhe: HeatmapDetalhe[]

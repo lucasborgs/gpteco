@@ -10,18 +10,20 @@ import { BarDiaSemana } from '@/components/charts/BarDiaSemana'
 export default function HorariosPage() {
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [days, setDays] = useState('all')
+  const [from, setFrom] = useState<string | null>(null)
+  const [to, setTo] = useState<string | null>(null)
 
-  const load = (d?: string) => {
+  const load = (f?: string | null, t?: string | null) => {
     setLoading(true)
-    fetchAnalytics(d ?? days).then(setData).catch(console.error).finally(() => setLoading(false))
+    fetchAnalytics(f ?? from, t ?? to).then(setData).catch(console.error).finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
 
-  const handleDaysChange = (d: string) => {
-    setDays(d)
-    load(d)
+  const handleDateChange = (f: string | null, t: string | null) => {
+    setFrom(f)
+    setTo(t)
+    load(f, t)
   }
 
   return (
@@ -29,7 +31,7 @@ export default function HorariosPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-heading text-content-primary">Horários de Pico</h1>
         <div className="flex items-center gap-2">
-          <DateFilter value={days} onChange={handleDaysChange} />
+          <DateFilter from={from} to={to} onChange={handleDateChange} />
           <button
             onClick={() => load()}
             className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors"

@@ -7,6 +7,8 @@ import type { GeneroItem, GeneroDetalhe } from '@/types/analytics'
 interface Props {
   data: GeneroItem[]
   detalhe: GeneroDetalhe[]
+  selectedGenero?: string | null
+  onGeneroClick?: (genero: string | null) => void
 }
 
 const COLORS = [
@@ -23,14 +25,16 @@ interface CustomContentProps {
   name?: string
   value?: number
   index?: number
+  isSelected?: boolean
 }
 
-function CustomContent({ x = 0, y = 0, width = 0, height = 0, name, value, index = 0 }: CustomContentProps) {
+function CustomContent({ x = 0, y = 0, width = 0, height = 0, name, value, index = 0, isSelected }: CustomContentProps) {
   const color = COLORS[index % COLORS.length]
-  if (width < 40 || height < 30) return <rect x={x} y={y} width={width} height={height} fill={color} rx={4} />
+  const strokeProps = isSelected ? { stroke: '#111', strokeWidth: 3 } : {}
+  if (width < 40 || height < 30) return <rect x={x} y={y} width={width} height={height} fill={color} rx={4} {...strokeProps} />
   return (
     <g>
-      <rect x={x} y={y} width={width} height={height} fill={color} rx={4} />
+      <rect x={x} y={y} width={width} height={height} fill={color} rx={4} {...strokeProps} />
       <text
         x={x + width / 2}
         y={y + height / 2 - 6}
@@ -56,10 +60,14 @@ function CustomContent({ x = 0, y = 0, width = 0, height = 0, name, value, index
   )
 }
 
-export function TreemapGeneros({ data, detalhe }: Props) {
+export function TreemapGeneros({ data, detalhe, selectedGenero, onGeneroClick }: Props) {
   const [hoveredGenero, setHoveredGenero] = useState<string | null>(null)
 
-  const formatted = data.map((d) => ({ name: d.genero, size: d.pedidos }))
+  const formatted = data.map((d) => ({
+    name: d.genero,
+    size: d.pedidos,
+    isSelected: d.genero === selectedGenero,
+  }))
 
   // Agrupa detalhes por gênero (top 5 músicas por gênero)
   const detalhesPorGenero: Record<string, GeneroDetalhe[]> = {}
@@ -71,6 +79,12 @@ export function TreemapGeneros({ data, detalhe }: Props) {
   })
 
   const tooltipItems = hoveredGenero ? detalhesPorGenero[hoveredGenero] || [] : []
+
+  const handleClick = (node: { name?: string }) => {
+    if (!onGeneroClick || !node?.name) return
+    // Toggle: clique no mesmo limpa, clique em outro filtra
+    onGeneroClick(node.name === selectedGenero ? null : node.name)
+  }
 
   return (
     <div className="relative">
@@ -85,6 +99,8 @@ export function TreemapGeneros({ data, detalhe }: Props) {
             onMouseEnter={(node: { name?: string }) => {
               if (node?.name) setHoveredGenero(node.name)
             }}
+            onClick={handleClick}
+            style={{ cursor: onGeneroClick ? 'pointer' : undefined }}
           />
         </ResponsiveContainer>
       </div>

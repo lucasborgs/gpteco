@@ -38,7 +38,10 @@ Iniciar em produção (Windows):
 
 import asyncio
 import os
+import shutil
 from collections import OrderedDict
+
+import httpx
 
 from dotenv import load_dotenv
 
@@ -66,8 +69,24 @@ app.add_middleware(
 _mensagens_processadas: OrderedDict[str, None] = OrderedDict()
 _MAX_CACHE_MENSAGENS = 500
 
-# Número do dono da rádio para receber o relatório semanal
+# Números para alertas e relatório semanal
 NUMERO_DONO: str = os.getenv("NUMERO_DONO", "")
+NUMERO_DEV: str = os.getenv("NUMERO_DEV", "")
+
+# Constantes WAHA (nível de módulo — usadas por health check e monitor)
+WAHA_URL: str = os.getenv("WAHA_URL", "http://localhost:3001").rstrip("/")
+WAHA_API_KEY: str = os.getenv("WAHA_API_KEY", "")
+WAHA_SESSION: str = os.getenv("WAHA_SESSION", "default")
+
+
+async def _enviar_alerta(texto: str) -> None:
+    """Envia alerta via WhatsApp para o dono e o dev (best-effort)."""
+    for numero in (NUMERO_DONO, NUMERO_DEV):
+        if numero:
+            try:
+                await asyncio.to_thread(lambda n=numero: whatsapp.enviar_mensagem(n, texto))
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -131,41 +150,80 @@ async def _configurar_webhook_com_retry() -> None:
     print("[SERVER] AVISO: Webhook nao configurado automaticamente. Configure manualmente.")
 
 
+async def _verificar_status_sessao() -> str:
+    """Consulta o status da sessão WAHA. Retorna string de status ou 'UNREACHABLE'."""
+    try:
+        url = f"{WAHA_URL}/api/sessions/{WAHA_SESSION}"
+        headers = {"X-Api-Key": WAHA_API_KEY} if WAHA_API_KEY else {}
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, headers=headers)
+        return resp.json().get("status", "UNKNOWN") if resp.status_code == 200 else "UNREACHABLE"
+    except Exception:
+        return "UNREACHABLE"
+
+
 async def _loop_monitor_sessao() -> None:
     """
     Verifica a cada 5 minutos se a sessão WAHA está conectada.
-    Se desconectada, loga aviso e envia alerta via WhatsApp ao dono (se configurado).
+    Se desconectada, tenta reconexão automática (até 3x).
+    Alerta o dono apenas se a reconexão falhar.
     """
-    import httpx
-    WAHA_URL = os.getenv("WAHA_URL", "http://localhost:3001").rstrip("/")
-    WAHA_API_KEY = os.getenv("WAHA_API_KEY", "")
-    WAHA_SESSION = os.getenv("WAHA_SESSION", "default")
-    INTERVALO_S = 300  # 5 minutos
+    INTERVALO_S = 300           # 5 minutos
+    MAX_RECONEXAO = 3           # tentativas por incidente
+    ESPERA_ENTRE_TENTATIVAS = 30
+    ESPERA_POS_RESTART = 15
     ja_alertou = False
 
     await asyncio.sleep(30)  # Aguarda o WAHA inicializar antes do primeiro check
 
     while True:
         try:
-            url = f"{WAHA_URL}/api/sessions/{WAHA_SESSION}"
-            headers = {"X-Api-Key": WAHA_API_KEY} if WAHA_API_KEY else {}
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(url, headers=headers)
-            status = resp.json().get("status", "UNKNOWN") if resp.status_code == 200 else "UNREACHABLE"
+            status = await _verificar_status_sessao()
 
             if status not in ("WORKING", "CONNECTED"):
-                print(f"[MONITOR] ALERTA: Sessão WAHA com status '{status}' — WhatsApp desconectado!")
-                if NUMERO_DONO and not ja_alertou:
-                    await asyncio.to_thread(
-                        lambda: whatsapp.enviar_mensagem(
-                            NUMERO_DONO,
-                            f"⚠️ ALERTA: A sessão do WhatsApp está '{status}'. Reconecte o QR code no painel WAHA."
+                print(f"[MONITOR] Sessão WAHA com status '{status}' — tentando reconexão automática...")
+
+                reconectou = False
+                for tentativa in range(1, MAX_RECONEXAO + 1):
+                    print(f"[MONITOR] Tentativa de reconexão {tentativa}/{MAX_RECONEXAO}...")
+                    try:
+                        headers = {"X-Api-Key": WAHA_API_KEY} if WAHA_API_KEY else {}
+                        async with httpx.AsyncClient(timeout=15) as client:
+                            resp = await client.put(
+                                f"{WAHA_URL}/api/sessions/{WAHA_SESSION}/restart",
+                                headers=headers,
+                            )
+                        print(f"[MONITOR] Restart API retornou HTTP {resp.status_code}")
+                    except Exception as e:
+                        print(f"[MONITOR] Erro ao chamar restart: {e}")
+
+                    await asyncio.sleep(ESPERA_POS_RESTART)
+                    novo_status = await _verificar_status_sessao()
+
+                    if novo_status in ("WORKING", "CONNECTED"):
+                        print(f"[MONITOR] Reconexão bem-sucedida na tentativa {tentativa}!")
+                        reconectou = True
+                        break
+
+                    if tentativa < MAX_RECONEXAO:
+                        await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
+
+                if reconectou:
+                    if ja_alertou:
+                        await _enviar_alerta("✅ Sessão do WhatsApp reconectada automaticamente.")
+                    ja_alertou = False
+                else:
+                    print("[MONITOR] Todas as tentativas de reconexão falharam.")
+                    if not ja_alertou:
+                        await _enviar_alerta(
+                            "⚠️ ALERTA: A sessão do WhatsApp está desconectada e a reconexão automática falhou. "
+                            "Reconecte manualmente pelo painel WAHA."
                         )
-                    )
-                    ja_alertou = True
+                        ja_alertou = True
             else:
                 if ja_alertou:
                     print("[MONITOR] Sessão WAHA reconectada.")
+                    await _enviar_alerta("✅ Sessão do WhatsApp reconectada com sucesso.")
                     ja_alertou = False
 
         except Exception as e:
@@ -178,9 +236,68 @@ async def _loop_monitor_sessao() -> None:
 # Health check
 # ---------------------------------------------------------------------------
 
+@app.get("/health")
 @app.get("/")
 async def health():
-    return {"status": "online", "servico": "Agente Virtual Musical"}
+    checks: dict = {}
+    overall_healthy = True
+
+    # 1. WAHA session status
+    try:
+        waha_status = await _verificar_status_sessao()
+        waha_ok = waha_status in ("WORKING", "CONNECTED")
+        checks["waha"] = {"status": waha_status, "healthy": waha_ok}
+        if not waha_ok:
+            overall_healthy = False
+    except Exception as e:
+        checks["waha"] = {"status": "ERROR", "detail": str(e), "healthy": False}
+        overall_healthy = False
+
+    # 2. Database connectivity
+    try:
+        con = await asyncio.to_thread(database._get_connection)
+        try:
+            with con.cursor() as cur:
+                cur.execute("SELECT 1")
+            checks["database"] = {"status": "connected", "healthy": True}
+        finally:
+            con.close()
+    except Exception as e:
+        checks["database"] = {"status": "unreachable", "detail": str(e), "healthy": False}
+        overall_healthy = False
+
+    # 3. Queue watcher thread
+    watcher_alive = queue_watcher.is_alive()
+    checks["queue_watcher"] = {
+        "status": "running" if watcher_alive else "dead",
+        "healthy": watcher_alive,
+    }
+    if not watcher_alive:
+        overall_healthy = False
+
+    # 4. Disk space (soft warning — não causa 503)
+    try:
+        usage = shutil.disk_usage("/app/workspace")
+        free_gb = usage.free / (1024 ** 3)
+        total_gb = usage.total / (1024 ** 3)
+        disk_ok = free_gb > 1.0
+        checks["disk"] = {
+            "free_gb": round(free_gb, 2),
+            "total_gb": round(total_gb, 2),
+            "healthy": disk_ok,
+        }
+    except Exception:
+        checks["disk"] = {"status": "unknown", "healthy": True}
+
+    status_code = 200 if overall_healthy else 503
+    return JSONResponse(
+        {
+            "status": "healthy" if overall_healthy else "unhealthy",
+            "servico": "Agente Virtual Musical",
+            "checks": checks,
+        },
+        status_code=status_code,
+    )
 
 
 # ---------------------------------------------------------------------------

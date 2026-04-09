@@ -8,26 +8,32 @@ const DIAS = ['Segunda', 'Terca', 'Quarta', 'Quinta', 'Sexta', 'Sabado', 'Doming
 export async function GET(request: NextRequest) {
   const client = await pool.connect()
   try {
-    const now = new Date()
-    const daysParam = request.nextUrl.searchParams.get('days')
-    const days = daysParam && ['7', '15', '30'].includes(daysParam) ? Number(daysParam) : null
+    // --- Filtro de data: from/to (ISO strings) ---
+    const fromParam = request.nextUrl.searchParams.get('from')
+    const toParam = request.nextUrl.searchParams.get('to')
+    const dataInicio = fromParam ? new Date(fromParam) : null
+    const dataFim = toParam ? new Date(toParam + 'T23:59:59.999') : null
 
-    // dataInicio: filtro global (null = todo período)
-    const dataInicio = days ? new Date(now.getTime() - days * 24 * 60 * 60 * 1000) : null
-    // Filtros para tendência: sempre baseados na última semana relativa ao período
-    const semana = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-    const duasSemanas = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
-
-    // Helper: adiciona WHERE de data se filtro ativo
-    const dateFilter = (alias: string, paramIndex: number) =>
-      dataInicio ? `AND ${alias} >= $${paramIndex}` : ''
-    const dateParams = dataInicio ? [dataInicio] : []
+    // Monta cláusulas e parâmetros dinâmicos
+    const dateConditions: string[] = []
+    const dateParams: (Date)[] = []
+    if (dataInicio) {
+      dateParams.push(dataInicio)
+      dateConditions.push(`timestamp_pedido >= $${dateParams.length}`)
+    }
+    if (dataFim) {
+      dateParams.push(dataFim)
+      dateConditions.push(`timestamp_pedido <= $${dateParams.length}`)
+    }
+    const dateWhere = dateConditions.length
+      ? 'AND ' + dateConditions.join(' AND ')
+      : ''
+    const dateWhereOnly = dateConditions.length
+      ? 'WHERE ' + dateConditions.join(' AND ')
+      : ''
 
     const [
       topAllTime,
-      topSemana,
-      tendenciaAtual,
-      tendenciaAnterior,
       picoDia,
       heatmap,
       heatmapDetalhe,
@@ -39,49 +45,21 @@ export async function GET(request: NextRequest) {
       generosDetalhe,
       fasFrequentes,
     ] = await Promise.all([
-      // top_musicas (filtrado pelo período selecionado)
+      // todas as músicas pedidas com sucesso (sem LIMIT) + gênero
       client.query(`
-        SELECT artista, musica, COUNT(*) AS pedidos
+        SELECT artista, musica, COALESCE(genero, '') AS genero, COUNT(*) AS pedidos
         FROM dim_pedidos
         WHERE sucesso = TRUE AND artista != '' AND musica != ''
-          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
-        GROUP BY artista, musica
+          ${dateWhere}
+        GROUP BY artista, musica, genero
         ORDER BY pedidos DESC
-        LIMIT 10
       `, dateParams),
-      // top_musicas_semana (sempre última semana)
-      client.query(`
-        SELECT artista, musica, COUNT(*) AS pedidos
-        FROM dim_pedidos
-        WHERE timestamp_pedido >= $1 AND sucesso = TRUE AND artista != '' AND musica != ''
-        GROUP BY artista, musica
-        ORDER BY pedidos DESC
-        LIMIT 5
-      `, [semana]),
-      // tendencia - semana atual
-      client.query(`
-        SELECT artista, musica, COUNT(*) AS pedidos
-        FROM dim_pedidos
-        WHERE timestamp_pedido >= $1 AND sucesso = TRUE AND artista != ''
-        GROUP BY artista, musica
-        ORDER BY pedidos DESC
-        LIMIT 5
-      `, [semana]),
-      // tendencia - semana anterior
-      client.query(`
-        SELECT artista, musica, COUNT(*) AS pedidos
-        FROM dim_pedidos
-        WHERE timestamp_pedido >= $1 AND timestamp_pedido < $2
-          AND sucesso = TRUE AND artista != ''
-        GROUP BY artista, musica
-        ORDER BY pedidos DESC
-      `, [duasSemanas, semana]),
       // pico_por_dia_semana (converte UTC → Brasília)
       client.query(`
         SELECT (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
                COUNT(*) AS pedidos
         FROM dim_pedidos
-        ${dataInicio ? 'WHERE timestamp_pedido >= $1' : ''}
+        ${dateWhereOnly}
         GROUP BY dia_semana
         ORDER BY dia_semana
       `, dateParams),
@@ -91,7 +69,7 @@ export async function GET(request: NextRequest) {
                (EXTRACT(DOW FROM timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::int + 6) % 7 AS dia_semana,
                COUNT(*) AS pedidos
         FROM dim_pedidos
-        ${dataInicio ? 'WHERE timestamp_pedido >= $1' : ''}
+        ${dateWhereOnly}
         GROUP BY hora, dia_semana
       `, dateParams),
       // heatmap_detalhe (músicas por hora×dia, para tooltip)
@@ -101,7 +79,7 @@ export async function GET(request: NextRequest) {
                artista, musica, COUNT(*) AS pedidos
         FROM dim_pedidos
         WHERE sucesso = TRUE AND artista != '' AND musica != ''
-          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+          ${dateWhere}
         GROUP BY hora, dia_semana, artista, musica
         ORDER BY hora, dia_semana, pedidos DESC
       `, dateParams),
@@ -110,30 +88,29 @@ export async function GET(request: NextRequest) {
         SELECT sucesso, motivo_rejeicao, COUNT(*) AS qtd
         FROM dim_pedidos
         WHERE (motivo_rejeicao IS NULL OR motivo_rejeicao != 'saudacao')
-          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+          ${dateWhere}
         GROUP BY sucesso, motivo_rejeicao
       `, dateParams),
-      // ouvintes_engajados (usa telefone real quando disponível)
+      // ouvintes_engajados — sem LIMIT (todos)
       client.query(`
         SELECT COALESCE(telefone, numero) AS numero_real, COUNT(*) AS pedidos, MIN(timestamp_pedido) AS primeiro_pedido
         FROM dim_pedidos
         WHERE sucesso = TRUE
-          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+          ${dateWhere}
         GROUP BY numero_real
         ORDER BY pedidos DESC
-        LIMIT 10
       `, dateParams),
-      // breakdown_ddd (usa telefone se a coluna existir)
+      // breakdown_ddd — usa COALESCE para pegar telefone real quando disponível
       client.query(`
-        SELECT numero, telefone, COUNT(*) AS pedidos
+        SELECT COALESCE(telefone, numero) AS numero_real, COUNT(*) AS pedidos
         FROM dim_pedidos
-        ${dataInicio ? 'WHERE timestamp_pedido >= $1' : ''}
-        GROUP BY numero, telefone
+        WHERE TRUE ${dateWhere}
+        GROUP BY numero_real
       `, dateParams).catch(() =>
         client.query(`
-          SELECT numero, NULL AS telefone, COUNT(*) AS pedidos
+          SELECT numero AS numero_real, COUNT(*) AS pedidos
           FROM dim_pedidos
-          ${dataInicio ? 'WHERE timestamp_pedido >= $1' : ''}
+          WHERE TRUE ${dateWhere}
           GROUP BY numero
         `, dateParams)
       ),
@@ -142,7 +119,7 @@ export async function GET(request: NextRequest) {
         SELECT artista, COUNT(*) AS pedidos
         FROM dim_pedidos
         WHERE sucesso = TRUE AND artista != ''
-          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+          ${dateWhere}
         GROUP BY artista
         ORDER BY pedidos DESC
         LIMIT 15
@@ -152,7 +129,7 @@ export async function GET(request: NextRequest) {
         SELECT genero, COUNT(*) AS pedidos
         FROM dim_pedidos
         WHERE sucesso = TRUE AND genero IS NOT NULL AND genero != ''
-          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+          ${dateWhere}
         GROUP BY genero
         ORDER BY pedidos DESC
         LIMIT 10
@@ -162,7 +139,7 @@ export async function GET(request: NextRequest) {
         SELECT genero, artista, musica, COUNT(*) AS pedidos
         FROM dim_pedidos
         WHERE sucesso = TRUE AND genero IS NOT NULL AND genero != ''
-          ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+          ${dateWhere}
         GROUP BY genero, artista, musica
         ORDER BY genero, pedidos DESC
       `, dateParams).catch(() => ({ rows: [] })),
@@ -172,29 +149,12 @@ export async function GET(request: NextRequest) {
           SELECT COALESCE(telefone, numero) AS ouvinte
           FROM dim_pedidos
           WHERE sucesso = TRUE
-            ${dataInicio ? 'AND timestamp_pedido >= $1' : ''}
+            ${dateWhere}
           GROUP BY ouvinte
           HAVING COUNT(*) >= 2
         ) sub
       `, dateParams),
     ])
-
-    // --- Transform tendencia ---
-    const rankingAnterior: Record<string, number> = {}
-    tendenciaAnterior.rows.forEach((r, i) => {
-      rankingAnterior[`${r.artista}|${r.musica}`] = i + 1
-    })
-    const tendencia_musicas = tendenciaAtual.rows.map((r, i) => {
-      const pos = i + 1
-      const chave = `${r.artista}|${r.musica}`
-      const posAnt = rankingAnterior[chave]
-      let tendencia: string
-      if (posAnt == null) tendencia = 'new'
-      else if (pos < posAnt) tendencia = 'up'
-      else if (pos > posAnt) tendencia = 'down'
-      else tendencia = 'same'
-      return { posicao: pos, artista: r.artista, musica: r.musica, pedidos: Number(r.pedidos), tendencia }
-    })
 
     // --- Transform taxa ---
     let total = 0, aceitos = 0
@@ -234,8 +194,7 @@ export async function GET(request: NextRequest) {
     // --- Transform DDD ---
     const dddCount: Record<string, number> = {}
     dddRaw.rows.forEach(r => {
-      const num = r.telefone || r.numero
-      const base = num.split('@')[0]
+      const base = (r.numero_real || '').split('@')[0]
       const ddd = base.length >= 12 && base.startsWith('55') ? base.slice(2, 4) : '??'
       dddCount[ddd] = (dddCount[ddd] || 0) + Number(r.pedidos)
     })
@@ -244,9 +203,12 @@ export async function GET(request: NextRequest) {
       .map(([ddd, pedidos]) => ({ ddd, pedidos }))
 
     return NextResponse.json({
-      top_musicas_all_time: topAllTime.rows.map(r => ({ artista: r.artista, musica: r.musica, pedidos: Number(r.pedidos) })),
-      top_musicas_semana: topSemana.rows.map(r => ({ artista: r.artista, musica: r.musica, pedidos: Number(r.pedidos) })),
-      tendencia_musicas,
+      top_musicas_all_time: topAllTime.rows.map(r => ({
+        artista: r.artista,
+        musica: r.musica,
+        genero: r.genero,
+        pedidos: Number(r.pedidos),
+      })),
       pico_por_dia_semana: picoDia.rows.map(r => ({
         dia_semana: Number(r.dia_semana),
         dia_nome: DIAS[Number(r.dia_semana)] || '?',

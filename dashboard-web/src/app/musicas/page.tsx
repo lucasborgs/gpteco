@@ -9,38 +9,40 @@ import { DateFilter } from '@/components/ui/DateFilter'
 import { BarMusicas } from '@/components/charts/BarMusicas'
 import { TreemapGeneros } from '@/components/charts/TreemapGeneros'
 
-const TENDENCIA_CONFIG = {
-  up:   { label: '↑ subiu',   className: 'text-green-600 font-medium' },
-  down: { label: '↓ caiu',    className: 'text-red-600 font-medium' },
-  same: { label: '= estável', className: 'text-gray-500' },
-  new:  { label: '★ novo',    className: 'text-[#1DB954] font-medium' },
-}
-
 export default function MusicasPage() {
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [days, setDays] = useState('all')
+  const [from, setFrom] = useState<string | null>(null)
+  const [to, setTo] = useState<string | null>(null)
+  const [selectedGenero, setSelectedGenero] = useState<string | null>(null)
 
-  const load = (d?: string) => {
+  const load = (f?: string | null, t?: string | null) => {
     setLoading(true)
-    fetchAnalytics(d ?? days).then(setData).catch(console.error).finally(() => setLoading(false))
+    fetchAnalytics(f ?? from, t ?? to).then(setData).catch(console.error).finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
 
-  const handleDaysChange = (d: string) => {
-    setDays(d)
-    load(d)
+  const handleDateChange = (f: string | null, t: string | null) => {
+    setFrom(f)
+    setTo(t)
+    load(f, t)
   }
 
   const taxa = data?.taxa_atendimento
+
+  // Filtra músicas por gênero selecionado
+  const allMusicas = data?.top_musicas_all_time ?? []
+  const filteredMusicas = selectedGenero
+    ? allMusicas.filter(m => m.genero === selectedGenero)
+    : allMusicas
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-heading text-content-primary">Músicas</h1>
         <div className="flex items-center gap-2">
-          <DateFilter value={days} onChange={handleDaysChange} />
+          <DateFilter from={from} to={to} onChange={handleDateChange} />
           <button
             onClick={() => load()}
             className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors"
@@ -75,34 +77,45 @@ export default function MusicasPage() {
             <h2 className="text-sm font-semibold uppercase tracking-wider text-content-secondary mb-4">
               Top 10 Histórico
             </h2>
-            <BarMusicas data={data?.top_musicas_all_time ?? []} color="#2E86AB" />
+            <BarMusicas data={allMusicas.slice(0, 10)} color="#2E86AB" />
           </div>
           <div className="bg-white rounded-xl border border-border shadow-card p-5">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-content-secondary mb-4">
               Gêneros Mais Pedidos
             </h2>
-            <TreemapGeneros data={data?.top_generos ?? []} detalhe={data?.generos_detalhe ?? []} />
+            <TreemapGeneros
+              data={data?.top_generos ?? []}
+              detalhe={data?.generos_detalhe ?? []}
+              selectedGenero={selectedGenero}
+              onGeneroClick={setSelectedGenero}
+            />
           </div>
         </div>
       )}
 
       {!loading && (
         <div className="bg-white rounded-xl border border-border shadow-card">
-          <div className="px-4 py-3 bg-gray-50 border-b border-border rounded-t-xl">
+          <div className="px-4 py-3 bg-gray-50 border-b border-border rounded-t-xl flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-content-secondary">
-              Trending — Top 5 Esta Semana vs. Semana Anterior
+              {selectedGenero ? `Músicas — ${selectedGenero}` : 'Todas as Músicas Pedidas'}
             </h2>
+            {selectedGenero && (
+              <button
+                onClick={() => setSelectedGenero(null)}
+                className="text-xs text-content-secondary hover:text-content-primary transition-colors"
+              >
+                Limpar filtro
+              </button>
+            )}
           </div>
           <DataTable
-            headers={['Tendência', 'Artista — Música', 'Pedidos']}
-            rows={(data?.tendencia_musicas ?? []).map(t => {
-              const cfg = TENDENCIA_CONFIG[t.tendencia as keyof typeof TENDENCIA_CONFIG]
-              return [
-                <span key="t" className={cfg.className}>{cfg.label}</span>,
-                `${t.artista} — ${t.musica}`,
-                <span key="p" className="font-data">{t.pedidos}</span>,
-              ]
-            })}
+            headers={['#', 'Artista — Música', 'Gênero', 'Pedidos']}
+            rows={filteredMusicas.map((m, i) => [
+              <span key="i" className="font-data text-content-secondary">{i + 1}</span>,
+              `${m.artista} — ${m.musica}`,
+              <span key="g" className="capitalize text-content-secondary">{m.genero || '—'}</span>,
+              <span key="p" className="font-data">{m.pedidos}</span>,
+            ])}
           />
         </div>
       )}

@@ -95,6 +95,18 @@ services:
     networks:
       - agente_net
 
+  # --- Uptime Kuma (monitoramento) ---
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3002:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+    networks:
+      - agente_net
+
 networks:
   agente_net:
     driver: bridge
@@ -102,3 +114,4 @@ networks:
 volumes:
   waha_sessions:
   whisper_cache:
+  uptime_kuma_data:

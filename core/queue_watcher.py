@@ -98,6 +98,11 @@ def _watchdog() -> None:
             print("[WATCHER] Thread reiniciada.")
 
 
+def is_alive() -> bool:
+    """Retorna True se a thread do watcher está rodando."""
+    return _thread is not None and _thread.is_alive()
+
+
 def start() -> None:
     """Inicia o watcher em thread daemon (não bloqueia o processo principal)."""
     global _thread
