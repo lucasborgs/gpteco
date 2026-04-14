@@ -157,12 +157,11 @@ def processar_pedido(
         # --- Etapa 4: Download Dinâmico (somente se necessário) ---
         if file_path:
             _log_etapa(4, "Download ignorado — música já no acervo")
-            if notificar:
-                notificar(f"🎵 Encontrei! Preparando '{metadados.musica}' de {metadados.artista}...")
         else:
             _log_etapa(4, "Download dinâmico (YouTube)")
-            if notificar:
-                notificar("🔎 Sua música não está no acervo ainda. Aguarde, estou buscando...")
+        # Notifica apenas pedidos por texto (áudio já recebeu "Buscando a música..." no STT)
+        if not path_ogg and notificar:
+            notificar("🔎 Buscando sua música...")
             file_path = downloader.baixar(metadados.artista, metadados.musica)
 
         # --- Etapa 5: Mixagem (somente se havia voz para misturar) ---

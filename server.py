@@ -69,6 +69,25 @@ app.add_middleware(
 _mensagens_processadas: OrderedDict[str, None] = OrderedDict()
 _MAX_CACHE_MENSAGENS = 500
 
+# Números com pipeline em andamento — bloqueia requisições concorrentes do mesmo ouvinte
+# (segunda linha de defesa: dedup por msg_id pode falhar se o WAHA atribuir ids diferentes)
+_numeros_em_processamento: set[str] = set()
+_lock_processamento = asyncio.Lock()
+
+
+async def _reservar_numero(numero: str) -> bool:
+    """Reserva o número para processamento. Retorna False se já em uso."""
+    async with _lock_processamento:
+        if numero in _numeros_em_processamento:
+            return False
+        _numeros_em_processamento.add(numero)
+        return True
+
+
+async def _liberar_numero(numero: str) -> None:
+    async with _lock_processamento:
+        _numeros_em_processamento.discard(numero)
+
 # Números para alertas e relatório semanal
 NUMERO_DONO: str = os.getenv("NUMERO_DONO", "")
 NUMERO_DEV: str = os.getenv("NUMERO_DEV", "")
@@ -390,6 +409,10 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
 
     # --- Áudio de voz ---
     if has_media and mimetype.startswith("audio/"):
+        # Segunda linha de defesa: bloqueia pipelines concorrentes para o mesmo ouvinte
+        if not await _reservar_numero(numero):
+            print(f"[WEBHOOK] Ignorado: {numero} já está em processamento.")
+            return JSONResponse({"status": "already_processing"})
         background_tasks.add_task(_pipeline_audio, numero, msg)
 
     # --- Mensagem de texto ---
@@ -397,6 +420,9 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         texto = (msg.get("body") or "").strip()
         if not texto:
             return JSONResponse({"status": "ignored"})
+        if not await _reservar_numero(numero):
+            print(f"[WEBHOOK] Ignorado: {numero} já está em processamento.")
+            return JSONResponse({"status": "already_processing"})
         background_tasks.add_task(_pipeline_texto, numero, texto)
 
     return JSONResponse({"status": "received"})
@@ -417,77 +443,83 @@ async def _resolver_telefone_bg(numero: str) -> None:
 
 async def _pipeline_texto(numero: str, texto: str) -> None:
     """Processa pedido de texto — com detecção de pendência de confirmação."""
-    pendencia = await asyncio.to_thread(lambda: database.buscar_pendencia(numero))
+    try:
+        pendencia = await asyncio.to_thread(lambda: database.buscar_pendencia(numero))
 
-    def _notificar(msg: str) -> None:
-        whatsapp.enviar_mensagem(numero, msg)
+        def _notificar(msg: str) -> None:
+            whatsapp.enviar_mensagem(numero, msg)
 
-    if pendencia:
-        path_ogg = pendencia["path_ogg"]
-        if path_ogg == "__texto__":
-            # Confirmação por texto: ouvinte responde "sim" ou digita nome correto
-            if texto.strip().lower() in ("sim", "s", "yes"):
-                # Usa artista/musica normalizados armazenados na pendência
-                texto = f"{pendencia['musica_original']} {pendencia['artista_original']}"
+        if pendencia:
+            path_ogg = pendencia["path_ogg"]
+            if path_ogg == "__texto__":
+                # Confirmação por texto: ouvinte responde "sim" ou digita nome correto
+                if texto.strip().lower() in ("sim", "s", "yes"):
+                    # Usa artista/musica normalizados armazenados na pendência
+                    texto = f"{pendencia['musica_original']} {pendencia['artista_original']}"
+                resultado = await asyncio.to_thread(
+                    lambda: processar_pedido(numero=numero, texto=texto, notificar=_notificar)
+                )
+            else:
+                # Confirmação por áudio: usa o .ogg original salvo para a mixagem
+                resultado = await asyncio.to_thread(
+                    lambda: processar_pedido(numero=numero, path_ogg=path_ogg, texto=texto, notificar=_notificar)
+                )
+            await asyncio.to_thread(lambda: database.remover_pendencia(numero))
+            if path_ogg != "__texto__" and not resultado.get("pendente") and os.path.isfile(path_ogg):
+                os.remove(path_ogg)
+                print(f"[SERVER] Temp pendência removido: {path_ogg}")
+        else:
             resultado = await asyncio.to_thread(
                 lambda: processar_pedido(numero=numero, texto=texto, notificar=_notificar)
             )
-        else:
-            # Confirmação por áudio: usa o .ogg original salvo para a mixagem
-            resultado = await asyncio.to_thread(
-                lambda: processar_pedido(numero=numero, path_ogg=path_ogg, texto=texto, notificar=_notificar)
-            )
-        await asyncio.to_thread(lambda: database.remover_pendencia(numero))
-        if path_ogg != "__texto__" and not resultado.get("pendente") and os.path.isfile(path_ogg):
-            os.remove(path_ogg)
-            print(f"[SERVER] Temp pendência removido: {path_ogg}")
-    else:
-        resultado = await asyncio.to_thread(
-            lambda: processar_pedido(numero=numero, texto=texto, notificar=_notificar)
-        )
 
-    if resultado["mensagem"]:
-        await asyncio.to_thread(
-            lambda: whatsapp.enviar_mensagem(numero, resultado["mensagem"])
-        )
-
-    await _resolver_telefone_bg(numero)
-
-
-async def _pipeline_audio(numero: str, msg: dict) -> None:
-    """Baixa o áudio, processa o pedido e envia resposta ao ouvinte."""
-    # 1. Baixa o áudio via WAHA mediaUrl
-    path_ogg = await asyncio.to_thread(lambda: whatsapp.baixar_audio(msg))
-
-    if not path_ogg:
-        await asyncio.to_thread(
-            lambda: whatsapp.enviar_mensagem(
-                numero,
-                "Nao consegui processar o audio. Pode reenviar ou mandar um texto?",
-            )
-        )
-        return
-
-    # 2. Processa e responde.
-    # Se pendente=True, o .ogg é mantido para ser usado na confirmação por texto.
-    def _notificar(msg: str) -> None:
-        whatsapp.enviar_mensagem(numero, msg)
-
-    resultado = {"pendente": False, "mensagem": None}
-    try:
-        resultado = await asyncio.to_thread(
-            lambda: processar_pedido(numero=numero, path_ogg=path_ogg, notificar=_notificar)
-        )
         if resultado["mensagem"]:
             await asyncio.to_thread(
                 lambda: whatsapp.enviar_mensagem(numero, resultado["mensagem"])
             )
-    finally:
-        if not resultado.get("pendente") and os.path.isfile(path_ogg):
-            os.remove(path_ogg)
-            print(f"[SERVER] Temp removido: {path_ogg}")
 
-    await _resolver_telefone_bg(numero)
+        await _resolver_telefone_bg(numero)
+    finally:
+        await _liberar_numero(numero)
+
+
+async def _pipeline_audio(numero: str, msg: dict) -> None:
+    """Baixa o áudio, processa o pedido e envia resposta ao ouvinte."""
+    try:
+        # 1. Baixa o áudio via WAHA mediaUrl
+        path_ogg = await asyncio.to_thread(lambda: whatsapp.baixar_audio(msg))
+
+        if not path_ogg:
+            await asyncio.to_thread(
+                lambda: whatsapp.enviar_mensagem(
+                    numero,
+                    "Nao consegui processar o audio. Pode reenviar ou mandar um texto?",
+                )
+            )
+            return
+
+        # 2. Processa e responde.
+        # Se pendente=True, o .ogg é mantido para ser usado na confirmação por texto.
+        def _notificar(msg: str) -> None:
+            whatsapp.enviar_mensagem(numero, msg)
+
+        resultado = {"pendente": False, "mensagem": None}
+        try:
+            resultado = await asyncio.to_thread(
+                lambda: processar_pedido(numero=numero, path_ogg=path_ogg, notificar=_notificar)
+            )
+            if resultado["mensagem"]:
+                await asyncio.to_thread(
+                    lambda: whatsapp.enviar_mensagem(numero, resultado["mensagem"])
+                )
+        finally:
+            if not resultado.get("pendente") and os.path.isfile(path_ogg):
+                os.remove(path_ogg)
+                print(f"[SERVER] Temp removido: {path_ogg}")
+
+        await _resolver_telefone_bg(numero)
+    finally:
+        await _liberar_numero(numero)
 
 if __name__ == '__main__':
     import uvicorn
