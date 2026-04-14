@@ -7,8 +7,8 @@ import type { GeneroItem, GeneroDetalhe } from '@/types/analytics'
 interface Props {
   data: GeneroItem[]
   detalhe: GeneroDetalhe[]
-  selectedGenero?: string | null
-  onGeneroClick?: (genero: string | null) => void
+  selectedGeneros?: Set<string>
+  onGeneroClick?: (generos: Set<string>) => void
 }
 
 const COLORS = [
@@ -60,16 +60,16 @@ function CustomContent({ x = 0, y = 0, width = 0, height = 0, name, value, index
   )
 }
 
-export function TreemapGeneros({ data, detalhe, selectedGenero, onGeneroClick }: Props) {
+export function TreemapGeneros({ data, detalhe, selectedGeneros, onGeneroClick }: Props) {
   const [hoveredGenero, setHoveredGenero] = useState<string | null>(null)
+  const hasSelection = selectedGeneros && selectedGeneros.size > 0
 
   const formatted = data.map((d) => ({
     name: d.genero,
     size: d.pedidos,
-    isSelected: d.genero === selectedGenero,
+    isSelected: selectedGeneros?.has(d.genero) ?? false,
   }))
 
-  // Agrupa detalhes por gênero (top 5 músicas por gênero)
   const detalhesPorGenero: Record<string, GeneroDetalhe[]> = {}
   detalhe.forEach(d => {
     if (!detalhesPorGenero[d.genero]) detalhesPorGenero[d.genero] = []
@@ -81,15 +81,18 @@ export function TreemapGeneros({ data, detalhe, selectedGenero, onGeneroClick }:
   const tooltipItems = hoveredGenero ? detalhesPorGenero[hoveredGenero] || [] : []
 
   const handleClick = (node: { name?: string }) => {
-    if (!onGeneroClick || !node?.name) return
-    // Toggle: clique no mesmo limpa, clique em outro filtra
-    onGeneroClick(node.name === selectedGenero ? null : node.name)
+    if (!onGeneroClick || !selectedGeneros || !node?.name) return
+    const next = new Set(selectedGeneros)
+    if (next.has(node.name)) next.delete(node.name)
+    else next.add(node.name)
+    onGeneroClick(next)
   }
 
   return (
     <div className="relative">
       <div
         onMouseLeave={() => setHoveredGenero(null)}
+        style={{ opacity: hasSelection ? undefined : undefined }}
       >
         <ResponsiveContainer width="100%" height={280}>
           <Treemap

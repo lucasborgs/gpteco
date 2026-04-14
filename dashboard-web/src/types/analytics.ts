@@ -61,6 +61,22 @@ export interface HeatmapDetalhe {
   pedidos: number
 }
 
+export interface PedidoIndividual {
+  artista: string
+  musica: string
+  genero: string
+  numero: string
+  data_pedido: string
+  hora: number
+  dia_semana: number
+  sucesso: boolean
+}
+
+export interface VolumeDiaMes {
+  dia: string
+  pedidos: number
+}
+
 export interface AnalyticsData {
   top_musicas_all_time: MusicaItem[]
   pico_por_dia_semana: DiaSemanaItem[]
@@ -73,4 +89,6 @@ export interface AnalyticsData {
   top_generos: GeneroItem[]
   generos_detalhe: GeneroDetalhe[]
   fas_frequentes: number
+  pedidos_individuais: PedidoIndividual[]
+  volume_dia_mes: VolumeDiaMes[]
 }

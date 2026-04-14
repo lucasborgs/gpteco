@@ -44,6 +44,8 @@ export async function GET(request: NextRequest) {
       generos,
       generosDetalhe,
       fasFrequentes,
+      pedidosIndividuais,
+      volumeDiaMes,
     ] = await Promise.all([
       // todas as músicas pedidas com sucesso (sem LIMIT) + gênero
       client.query(`
@@ -154,6 +156,25 @@ export async function GET(request: NextRequest) {
           HAVING COUNT(*) >= 2
         ) sub
       `, dateParams),
+      // pedidos_individuais — lista completa (incluindo falhas) para filtro cruzado e MetricCards
+      client.query(`
+        SELECT COALESCE(artista, '') AS artista, COALESCE(musica, '') AS musica,
+               COALESCE(genero, '') AS genero, numero, sucesso,
+               timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo' AS data_pedido
+        FROM dim_pedidos
+        WHERE (motivo_rejeicao IS NULL OR motivo_rejeicao != 'saudacao')
+          ${dateWhere}
+        ORDER BY timestamp_pedido DESC
+      `, dateParams),
+      // volume_dia_mes — pedidos por dia (data completa)
+      client.query(`
+        SELECT (timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
+               COUNT(*) AS pedidos
+        FROM dim_pedidos
+        ${dateWhereOnly}
+        GROUP BY dia
+        ORDER BY dia
+      `, dateParams),
     ])
 
     // --- Transform taxa ---
@@ -233,6 +254,26 @@ export async function GET(request: NextRequest) {
       top_generos: generos.rows.map(r => ({ genero: r.genero, pedidos: Number(r.pedidos) })),
       generos_detalhe: generosDetalhe.rows.map(r => ({ genero: r.genero, artista: r.artista, musica: r.musica, pedidos: Number(r.pedidos) })),
       fas_frequentes: Number(fasFrequentes.rows[0]?.total ?? 0),
+      pedidos_individuais: pedidosIndividuais.rows.map(r => {
+        const d = new Date(r.data_pedido)
+        return {
+          artista: r.artista,
+          musica: r.musica,
+          genero: r.genero,
+          numero: r.numero,
+          sucesso: Boolean(r.sucesso),
+          data_pedido: d.toLocaleString('pt-BR'),
+          hora: d.getHours(),
+          dia_semana: (d.getDay() + 6) % 7,
+        }
+      }),
+      volume_dia_mes: volumeDiaMes.rows.map(r => {
+        // Use UTC methods to avoid timezone shift (PG date → JS Date at midnight UTC)
+        const d = r.dia instanceof Date ? r.dia : new Date(r.dia)
+        const dd = String(d.getUTCDate()).padStart(2, '0')
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+        return { dia: `${dd}/${mm}`, pedidos: Number(r.pedidos) }
+      }),
     })
   } catch (err) {
     console.error('[API] Analytics error:', err)
