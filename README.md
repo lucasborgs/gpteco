@@ -1,6 +1,6 @@
 # Agente Virtual Musical
 
-> Ouvintes pedem músicas pelo WhatsApp. A rádio toca automaticamente.
+> Ouvintes pedem músicas pelo WhatsApp. A assistente faz a curadoria de acordo com o perfil da rádio e toca automaticamente.
 
 ---
 
