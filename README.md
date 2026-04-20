@@ -90,7 +90,7 @@ flowchart TD
 ```
 Python 3.12       FastAPI          pydub
 Whisper (local)   yt-dlp           ffmpeg
-DuckDB            OpenAI / Gemini  WAHA (Baileys)
+PostgreSQL        OpenAI / Gemini  WAHA (Baileys)
 Docker Compose    ZaraRadio (FM)
 ```
 
