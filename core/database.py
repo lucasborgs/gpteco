@@ -99,6 +99,31 @@ def init_db() -> None:
 
             cur.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
 
+            # --- Pílulas de curiosidade musical (cache + tracking) ---
+            cur.execute("CREATE SEQUENCE IF NOT EXISTS seq_dim_pilulas START 1;")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS dim_pilulas (
+                    id                  INTEGER   DEFAULT nextval('seq_dim_pilulas') PRIMARY KEY,
+                    artista_normalizado VARCHAR   NOT NULL,
+                    musica_normalizada  VARCHAR   NOT NULL,
+                    texto               TEXT      NOT NULL,
+                    modelo              VARCHAR,
+                    criado_em           TIMESTAMP DEFAULT current_timestamp,
+                    UNIQUE (artista_normalizado, musica_normalizada)
+                );
+            """)
+
+            cur.execute("CREATE SEQUENCE IF NOT EXISTS seq_fato_pilulas_enviadas START 1;")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS fato_pilulas_enviadas (
+                    id          INTEGER   DEFAULT nextval('seq_fato_pilulas_enviadas') PRIMARY KEY,
+                    numero      VARCHAR   NOT NULL,
+                    pilula_id   INTEGER   REFERENCES dim_pilulas(id) ON DELETE CASCADE,
+                    enviado_em  TIMESTAMP DEFAULT current_timestamp,
+                    UNIQUE (numero, pilula_id)
+                );
+            """)
+
         con.commit()
         print("[DB] Schema inicializado com sucesso.")
     finally:
@@ -448,5 +473,105 @@ def listar_acervo() -> list[dict]:
             }
             for r in rows
         ]
+    finally:
+        con.close()
+
+
+# ---------------------------------------------------------------------------
+# Pílulas de curiosidade musical
+# ---------------------------------------------------------------------------
+
+def buscar_pilula(artista: str, musica: str) -> tuple[int, str] | None:
+    """
+    Busca uma pílula em cache para o par (artista, música).
+
+    Retorna:
+        (id, texto) : se encontrada.
+        None        : se não houver pílula em cache.
+    """
+    chave_artista = _normalizar_texto(artista)
+    chave_musica = _normalizar_texto(musica)
+    con = _get_connection()
+    try:
+        with con.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, texto FROM dim_pilulas
+                WHERE artista_normalizado = %s
+                  AND musica_normalizada  = %s
+                LIMIT 1
+                """,
+                [chave_artista, chave_musica],
+            )
+            row = cur.fetchone()
+        if row:
+            return (int(row[0]), str(row[1]))
+        return None
+    finally:
+        con.close()
+
+
+def salvar_pilula(artista: str, musica: str, texto: str, modelo: str) -> int:
+    """
+    Salva uma pílula no cache. Se já existir (corrida concorrente), retorna o id existente.
+
+    Retorna:
+        int : id da pílula no cache.
+    """
+    chave_artista = _normalizar_texto(artista)
+    chave_musica = _normalizar_texto(musica)
+    con = _get_connection()
+    try:
+        with con.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO dim_pilulas (artista_normalizado, musica_normalizada, texto, modelo)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (artista_normalizado, musica_normalizada)
+                DO UPDATE SET artista_normalizado = EXCLUDED.artista_normalizado
+                RETURNING id
+                """,
+                [chave_artista, chave_musica, texto, modelo],
+            )
+            novo_id = int(cur.fetchone()[0])
+        con.commit()
+        print(f"[DB] Pílula salva (id={novo_id}): '{musica}' - '{artista}'")
+        return novo_id
+    finally:
+        con.close()
+
+
+def verificar_pilula_enviada(numero: str, pilula_id: int) -> bool:
+    """Retorna True se essa pílula já foi enviada para esse número."""
+    con = _get_connection()
+    try:
+        with con.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1 FROM fato_pilulas_enviadas
+                WHERE numero = %s AND pilula_id = %s
+                LIMIT 1
+                """,
+                [numero, pilula_id],
+            )
+            return cur.fetchone() is not None
+    finally:
+        con.close()
+
+
+def registrar_pilula_enviada(numero: str, pilula_id: int) -> None:
+    """Registra que a pílula foi entregue ao ouvinte. Idempotente."""
+    con = _get_connection()
+    try:
+        with con.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO fato_pilulas_enviadas (numero, pilula_id)
+                VALUES (%s, %s)
+                ON CONFLICT (numero, pilula_id) DO NOTHING
+                """,
+                [numero, pilula_id],
+            )
+        con.commit()
     finally:
         con.close()

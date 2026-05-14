@@ -39,6 +39,7 @@ Iniciar em produção (Windows):
 import asyncio
 import os
 import shutil
+import time
 from collections import OrderedDict
 
 import httpx
@@ -51,7 +52,7 @@ from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from core import database, queue_watcher, relatorio, whatsapp
+from core import config_radio, curador, database, queue_watcher, relatorio, whatsapp
 from core.pipeline import processar_pedido
 
 app = FastAPI(title="Agente Virtual Musical", version="1.0.0")
@@ -87,6 +88,107 @@ async def _reservar_numero(numero: str) -> bool:
 async def _liberar_numero(numero: str) -> None:
     async with _lock_processamento:
         _numeros_em_processamento.discard(numero)
+
+
+# ---------------------------------------------------------------------------
+# Máquina de estados por ouvinte (em memória)
+# ---------------------------------------------------------------------------
+# Estados possíveis:
+#   "aguardando_menu"   : menu foi enviado; aguardando resposta "1" ou "2"
+#   "aguardando_pedido" : bot está esperando o nome da música (após "1" do menu
+#                          ou após MSG_NAO_ID / MSG_NAO_REPERTORIO). Suprime o
+#                          menu para evitar regressão da conversa.
+#   "producao"          : ouvinte optou por falar com a produção; pipeline
+#                          desativado até o timer expirar (sem chamada ao LLM)
+# Ausência de entrada no dict = estado neutro (comportamento padrão).
+_estados_ouvinte: dict[str, dict] = {}
+_lock_estados = asyncio.Lock()
+
+PRODUCAO_TIMEOUT_S: int = int(os.getenv("PRODUCAO_TIMEOUT_MIN", "30")) * 60
+_AGUARDANDO_MENU_TIMEOUT_S: int = 5 * 60     # 5 min para responder o menu
+_AGUARDANDO_PEDIDO_TIMEOUT_S: int = 5 * 60   # 5 min para mandar o nome da música
+
+# --- Pílulas de curiosidade musical ---
+PILULAS_ATIVADAS: bool = os.getenv("PILULAS_ATIVADAS", "true").lower() == "true"
+_PILULA_DELAY_S: int = 2  # tempo entre MSG_SUCESSO e a pílula, para separação visual
+
+
+async def _esta_em_producao(numero: str) -> bool:
+    """Retorna True se o ouvinte está em modo produção e o timer ainda não expirou."""
+    async with _lock_estados:
+        estado = _estados_ouvinte.get(numero)
+        if not estado or estado["modo"] != "producao":
+            return False
+        if time.time() > estado["expira_em"]:
+            del _estados_ouvinte[numero]
+            return False
+        return True
+
+
+async def _renovar_timer_producao(numero: str) -> None:
+    """Estende o timer do modo produção a partir da última interação."""
+    async with _lock_estados:
+        if numero in _estados_ouvinte and _estados_ouvinte[numero]["modo"] == "producao":
+            _estados_ouvinte[numero]["expira_em"] = time.time() + PRODUCAO_TIMEOUT_S
+
+
+async def _ativar_modo_producao(numero: str) -> None:
+    async with _lock_estados:
+        _estados_ouvinte[numero] = {
+            "modo": "producao",
+            "expira_em": time.time() + PRODUCAO_TIMEOUT_S,
+        }
+
+
+async def _ativar_aguardando_menu(numero: str) -> None:
+    async with _lock_estados:
+        _estados_ouvinte[numero] = {
+            "modo": "aguardando_menu",
+            "expira_em": time.time() + _AGUARDANDO_MENU_TIMEOUT_S,
+        }
+
+
+async def _consumir_aguardando_menu(numero: str) -> bool:
+    """Se o ouvinte está aguardando resposta do menu (e não expirou), limpa o
+    estado e retorna True. Caso contrário, retorna False."""
+    async with _lock_estados:
+        estado = _estados_ouvinte.get(numero)
+        if not estado or estado["modo"] != "aguardando_menu":
+            return False
+        if time.time() > estado["expira_em"]:
+            del _estados_ouvinte[numero]
+            return False
+        del _estados_ouvinte[numero]
+        return True
+
+
+async def _ativar_aguardando_pedido(numero: str) -> None:
+    """Marca o ouvinte como 'esperando o nome da música'. Renova o timer se
+    já estiver nesse estado."""
+    async with _lock_estados:
+        _estados_ouvinte[numero] = {
+            "modo": "aguardando_pedido",
+            "expira_em": time.time() + _AGUARDANDO_PEDIDO_TIMEOUT_S,
+        }
+
+
+async def _esta_aguardando_pedido(numero: str) -> bool:
+    """Retorna True se o ouvinte está em aguardando_pedido e não expirou.
+    Não consome o estado (ele só sai por sucesso, novo pedido válido ou timer)."""
+    async with _lock_estados:
+        estado = _estados_ouvinte.get(numero)
+        if not estado or estado["modo"] != "aguardando_pedido":
+            return False
+        if time.time() > estado["expira_em"]:
+            del _estados_ouvinte[numero]
+            return False
+        return True
+
+
+async def _limpar_estado(numero: str) -> None:
+    async with _lock_estados:
+        _estados_ouvinte.pop(numero, None)
+
 
 # Números para alertas e relatório semanal
 NUMERO_DONO: str = os.getenv("NUMERO_DONO", "")
@@ -401,6 +503,12 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     if "@g.us" in from_jid:
         return JSONResponse({"status": "ignored"})
 
+    # --- Modo produção: bloqueia processamento, renova timer, sem chamar LLM ---
+    if await _esta_em_producao(numero):
+        await _renovar_timer_producao(numero)
+        print(f"[WEBHOOK] {numero} em modo produção — mensagem ignorada pelo bot.")
+        return JSONResponse({"status": "production_mode"})
+
     # WAHA NOWEB não envia campo "type"; detectamos o tipo pelo conteúdo:
     #   - hasMedia=True + mimetype "audio/*" → mensagem de áudio (ptt/audio)
     #   - caso contrário → mensagem de texto (body)
@@ -409,6 +517,9 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
 
     # --- Áudio de voz ---
     if has_media and mimetype.startswith("audio/"):
+        # Áudio invalida apenas o aguardando_menu (não é "1" nem "2");
+        # preserva aguardando_pedido pois o áudio quase sempre é o pedido.
+        await _consumir_aguardando_menu(numero)
         # Segunda linha de defesa: bloqueia pipelines concorrentes para o mesmo ouvinte
         if not await _reservar_numero(numero):
             print(f"[WEBHOOK] Ignorado: {numero} já está em processamento.")
@@ -420,12 +531,144 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         texto = (msg.get("body") or "").strip()
         if not texto:
             return JSONResponse({"status": "ignored"})
+
+        # Resposta a um menu enviado anteriormente?
+        if await _consumir_aguardando_menu(numero):
+            escolha = texto.strip().lower().rstrip(".!,)")
+            if escolha in ("1", "1️⃣", "música", "musica", "pedir música", "pedir musica"):
+                await _ativar_aguardando_pedido(numero)
+                background_tasks.add_task(
+                    _enviar_resposta_menu, numero, config_radio.MSG_AGUARDANDO_PEDIDO
+                )
+                return JSONResponse({"status": "menu_pedido"})
+            if escolha in ("2", "2️⃣", "produção", "producao", "falar com a produção", "falar com a producao"):
+                await _ativar_modo_producao(numero)
+                background_tasks.add_task(
+                    _enviar_resposta_menu, numero, config_radio.MSG_PRODUCAO_ATIVADO
+                )
+                return JSONResponse({"status": "menu_producao"})
+            # Qualquer outra coisa: assume que o ouvinte já mandou o pedido direto
+
         if not await _reservar_numero(numero):
             print(f"[WEBHOOK] Ignorado: {numero} já está em processamento.")
             return JSONResponse({"status": "already_processing"})
         background_tasks.add_task(_pipeline_texto, numero, texto)
 
     return JSONResponse({"status": "received"})
+
+
+async def _enviar_resposta_menu(numero: str, mensagem: str) -> None:
+    """Envia a resposta a uma escolha do menu (background task curta)."""
+    await asyncio.to_thread(lambda: whatsapp.enviar_mensagem(numero, mensagem))
+
+
+async def _aplicar_resultado_pipeline(
+    numero: str, resultado: dict, was_aguardando_pedido: bool
+) -> None:
+    """
+    Centraliza o envio da mensagem do pipeline e a transição de estado.
+
+    Regras:
+      - Se já estava em aguardando_pedido E o pipeline ia mostrar o menu:
+          suprime o menu (sem mensagem) e renova o timer — evita regressão da
+          conversa ("ouvinte já tinha optado por pedir música").
+      - Pendência (MSG_CONFIRMACAO) não altera o estado em memória — o fluxo
+          de pendência (DB) tem prioridade na próxima mensagem.
+      - Sucesso → limpa qualquer estado.
+      - mostrar_menu (sem aguardando_pedido prévio) → ativa aguardando_menu.
+      - aguardando_pedido (do pipeline) ou ouvinte que já estava aguardando →
+          ativa/renova aguardando_pedido.
+    """
+    mensagem = resultado.get("mensagem")
+    mostrar_menu = resultado.get("mostrar_menu", False)
+    deve_aguardar_pedido = resultado.get("aguardando_pedido", False)
+    sucesso = resultado.get("sucesso", False)
+    pendente = resultado.get("pendente", False)
+
+    # Suprime menu para ouvinte que já estava aguardando o pedido
+    if mostrar_menu and was_aguardando_pedido:
+        await _ativar_aguardando_pedido(numero)  # renova timer
+        print(f"[ESTADO] {numero}: menu suprimido (aguardando_pedido ativo).")
+        return
+
+    if mensagem:
+        await asyncio.to_thread(
+            lambda: whatsapp.enviar_mensagem(numero, mensagem)
+        )
+
+    if pendente:
+        return  # pendência (DB) tem prioridade — não muda o estado em memória
+
+    if sucesso:
+        await _limpar_estado(numero)
+        # Dispara pílula de curiosidade em background (não bloqueia)
+        artista = resultado.get("artista")
+        musica = resultado.get("musica")
+        if artista and musica and resultado.get("is_pedido_explicito"):
+            asyncio.create_task(_enviar_pilula_bg(numero, artista, musica))
+    elif mostrar_menu:
+        await _ativar_aguardando_menu(numero)
+    elif deve_aguardar_pedido or was_aguardando_pedido:
+        await _ativar_aguardando_pedido(numero)
+
+
+async def _enviar_pilula_bg(numero: str, artista: str, musica: str) -> None:
+    """
+    Gera (ou busca em cache) e envia a pílula de curiosidade ao ouvinte.
+
+    Falhas são silenciosas — a pílula é uma feature opcional e nunca pode
+    afetar a entrega da música.
+
+    Bloqueios:
+      - PILULAS_ATIVADAS=false no .env
+      - Número é o dono ou o dev (testes não devem ter ruído)
+      - Pílula já foi enviada para esse ouvinte+música
+      - Curador retorna None (modelo sem certeza, falha de API, etc.)
+    """
+    if not PILULAS_ATIVADAS:
+        return
+    if numero in (NUMERO_DONO, NUMERO_DEV):
+        return
+
+    try:
+        # 1. Busca pílula em cache; gera se não existir
+        cache = await asyncio.to_thread(
+            lambda: database.buscar_pilula(artista, musica)
+        )
+        if cache:
+            pilula_id, texto = cache
+        else:
+            texto = await asyncio.to_thread(
+                lambda: curador.gerar_pilula(artista, musica)
+            )
+            if not texto:
+                return  # modelo sem certeza ou falha
+            pilula_id = await asyncio.to_thread(
+                lambda: database.salvar_pilula(
+                    artista, musica, texto, curador.PILULAS_MODELO
+                )
+            )
+
+        # 2. Não repete pílula para o mesmo ouvinte+música
+        ja_enviada = await asyncio.to_thread(
+            lambda: database.verificar_pilula_enviada(numero, pilula_id)
+        )
+        if ja_enviada:
+            return
+
+        # 3. Aguarda alguns segundos para separar visualmente do MSG_SUCESSO
+        await asyncio.sleep(_PILULA_DELAY_S)
+
+        # 4. Envia e registra
+        mensagem = f"{config_radio.MSG_PILULA_PREFIXO}{texto}"
+        await asyncio.to_thread(
+            lambda: whatsapp.enviar_mensagem(numero, mensagem)
+        )
+        await asyncio.to_thread(
+            lambda: database.registrar_pilula_enviada(numero, pilula_id)
+        )
+    except Exception as e:
+        print(f"[PILULA] Falha ao enviar pílula para {numero}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +687,7 @@ async def _resolver_telefone_bg(numero: str) -> None:
 async def _pipeline_texto(numero: str, texto: str) -> None:
     """Processa pedido de texto — com detecção de pendência de confirmação."""
     try:
+        was_aguardando_pedido = await _esta_aguardando_pedido(numero)
         pendencia = await asyncio.to_thread(lambda: database.buscar_pendencia(numero))
 
         def _notificar(msg: str) -> None:
@@ -473,10 +717,7 @@ async def _pipeline_texto(numero: str, texto: str) -> None:
                 lambda: processar_pedido(numero=numero, texto=texto, notificar=_notificar)
             )
 
-        if resultado["mensagem"]:
-            await asyncio.to_thread(
-                lambda: whatsapp.enviar_mensagem(numero, resultado["mensagem"])
-            )
+        await _aplicar_resultado_pipeline(numero, resultado, was_aguardando_pedido)
 
         await _resolver_telefone_bg(numero)
     finally:
@@ -486,6 +727,7 @@ async def _pipeline_texto(numero: str, texto: str) -> None:
 async def _pipeline_audio(numero: str, msg: dict) -> None:
     """Baixa o áudio, processa o pedido e envia resposta ao ouvinte."""
     try:
+        was_aguardando_pedido = await _esta_aguardando_pedido(numero)
         # 1. Baixa o áudio via WAHA mediaUrl
         path_ogg = await asyncio.to_thread(lambda: whatsapp.baixar_audio(msg))
 
@@ -508,10 +750,7 @@ async def _pipeline_audio(numero: str, msg: dict) -> None:
             resultado = await asyncio.to_thread(
                 lambda: processar_pedido(numero=numero, path_ogg=path_ogg, notificar=_notificar)
             )
-            if resultado["mensagem"]:
-                await asyncio.to_thread(
-                    lambda: whatsapp.enviar_mensagem(numero, resultado["mensagem"])
-                )
+            await _aplicar_resultado_pipeline(numero, resultado, was_aguardando_pedido)
         finally:
             if not resultado.get("pendente") and os.path.isfile(path_ogg):
                 os.remove(path_ogg)

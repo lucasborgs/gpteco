@@ -86,8 +86,6 @@ services:
       - ${DATA_DIR:-./data}:/app/data
       # Pasta onde o ZaraRadio grava CurrentSong.txt (ex: C:\Users\user)
       - ${CURRENT_SONG_DIR:-./workspace/current_song}:/app/workspace/current_song
-      # Modelo Whisper — volume nomeado para não baixar a cada rebuild
-      - whisper_cache:/root/.cache/whisper
 
     depends_on:
       - waha
@@ -113,5 +111,4 @@ networks:
 
 volumes:
   waha_sessions:
-  whisper_cache:
   uptime_kuma_data:

@@ -11,7 +11,8 @@ Constantes de identidade/LLM:
 
 Constantes de mensagens ao ouvinte:
     MSG_SUCESSO, MSG_COOLDOWN, MSG_INAPROPRIADO, MSG_NAO_REPERTORIO,
-    MSG_NAO_ID, MSG_CONFIRMACAO, MSG_SAUDACAO
+    MSG_NAO_ID, MSG_CONFIRMACAO, MSG_SAUDACAO, MSG_AGRADECIMENTO,
+    MSG_MENU, MSG_AGUARDANDO_PEDIDO, MSG_PRODUCAO_ATIVADO, MSG_PILULA_PREFIXO
 
 Função pública:
     build_system_prompt() -> str
@@ -61,10 +62,28 @@ MSG_CONFIRMACAO = (
     "\n\nLuz FM, sempre ligada em você! 💡"
 )
 MSG_SAUDACAO = (
-    "Oi! Eu sou a LuzIA, a assistente virtual da Luz FM. 😊\n"
-    "Quer pedir um sucesso da sua época? É só me mandar o nome da música e do artista!"
+    "Oi! Eu sou a LuzIA, a assistente virtual da Luz FM. 😊"
+    "\n\nComo posso te ajudar?"
+    "\n*1* — Pedir uma música 🎵"
+    "\n*2* — Falar com a produção 🎙️"
+)
+MSG_AGRADECIMENTO = (
     "\n\nLuz FM, sempre ligada em você! 💡"
 )
+MSG_MENU = (
+    "Como posso te ajudar?"
+    "\n*1* — Pedir uma música 🎵"
+    "\n*2* — Falar com a produção 🎙️"
+)
+MSG_AGUARDANDO_PEDIDO = (
+    "Boa! Manda o nome da música e do artista que você quer ouvir. 🎵"
+)
+MSG_PRODUCAO_ATIVADO = (
+    "Combinado! Nossa equipe vai continuar daqui com você. 🎙️"
+)
+# Prefixo da pílula de curiosidade musical enviada após o MSG_SUCESSO.
+# A geração do texto fica a cargo do core/curador.py.
+MSG_PILULA_PREFIXO = "📖 "
 
 
 # ---------------------------------------------------------------------------
@@ -95,11 +114,12 @@ Sua tarefa é retornar APENAS um JSON válido, sem markdown (```json), sem comen
 - "is_flashback": booleano. true por PADRÃO. Retorne false APENAS e EXCLUSIVAMENTE nestes casos: 1) É explicitamente funk brasileiro atual, rap nacional/brasileiro ou gospel. 2) É sertanejo de subgênero moderno: piseiro, sofrência eletrônica, feminejo, sertanejo funk ou arrocha. IMPORTANTE: sertanejo raiz, modão, sertanejo romântico e sertanejo universitário clássico são ACEITOS (true), independentemente do ano. Pagode, samba e swingue NÃO são funk — artistas como Molejo, Exaltasamba, Raça Negra etc. DEVEM ser true. Qualquer outro gênero (pop, rock, eletrônica, R&B, country, etc.) de qualquer época DEVE ser true. Não use nenhum outro critério para rejeitar músicas.
 - "is_apropriado": booleano. Avalia APENAS o tom da mensagem. Retorne false SOMENTE para ofensas diretas à rádio ou trocadilhos grosseiros com nomes próprios (ex: Tomas Turbando). NUNCA dê false por causa de títulos de músicas.
 - "is_confiante": booleano. true se identificou artista/música com clareza ou conseguiu normalizar erros fonéticos óbvios (ex: "ACEDS" → "AC/DC", "Nikuita" + Elton John → "Nikita"). false se a transcrição for ininteligível ou ambígua após normalização.
-- "is_saudacao": booleano. true se for apenas um cumprimento ("bom dia", "valeu") SEM pedido musical. Só quando is_pedido_musical=false.
+- "is_saudacao": booleano. true se for apenas um cumprimento, agradecimento ou despedida SEM pedido musical (ex: "bom dia", "oi", "obrigado", "valeu", "vlw", "tmj", "tchau", "até mais", "abraço", "👋"). Só quando is_pedido_musical=false.
+- "is_pedido_explicito": booleano. true SOMENTE se o ouvinte mencionou um título de música (mesmo errado/normalizável). false quando o ouvinte pediu apenas pelo artista/banda/gênero e o título foi escolhido por você via "Hit Popular" (regra 4). Quando is_pedido_musical=false, use false.
 - "genero": string. Gênero musical da música pedida, em minúsculas. Valores esperados: "pop", "rock", "sertanejo", "mpb", "pagode", "samba", "forró", "axé", "eletrônica", "r&b", "soul", "country", "reggae", "jazz", "blues", "bossa nova", "hip hop", "metal", "punk", "folk", "dance", "disco", "new wave", "indie", "clássico", "romântico", "infantil". Se não identificar o gênero ou is_pedido_musical=false, use "".
 
 REGRAS DE EXTRAÇÃO:
-1. Ordem de triagem: Determine primeiro 'is_pedido_musical'. Se false, todos os demais campos assumem defaults: musica="", artista="", is_flashback=false, is_apropriado=true, is_confiante=true. Apenas 'is_saudacao' deve ser avaliado: true para saudações ("bom dia", "oi", "obrigado"); false para perguntas fora de escopo.
+1. Ordem de triagem: Determine primeiro 'is_pedido_musical'. Se false, todos os demais campos assumem defaults: musica="", artista="", is_flashback=false, is_apropriado=true, is_confiante=true, is_pedido_explicito=false. Apenas 'is_saudacao' deve ser avaliado: true para saudações, agradecimentos e despedidas ("bom dia", "oi", "obrigado", "valeu", "vlw", "tmj", "tchau"); false para perguntas, comentários ou pedidos fora de contexto musical.
 2. Normalização: Corrija capitalização e títulos oficiais (ex: "me pirou o cabeção" → "A Cera", "Charlie Brown Jr."). Padrões orais:
    - "música do [artista], [título]" → extraia o título
    - "[frase-título] do [artista]" → extraia ambos
@@ -110,11 +130,11 @@ REGRAS DE EXTRAÇÃO:
 
 EXEMPLOS DE SAÍDA ESPERADA:
 Entrada: "bom dia luzia toca aceds reio tu réu"
-Saída: {{"is_pedido_musical": true, "musica": "Highway to Hell", "artista": "AC/DC", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "genero": "rock"}}
+Saída: {{"is_pedido_musical": true, "musica": "Highway to Hell", "artista": "AC/DC", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "genero": "rock"}}
 
 Entrada: "toca uma do zé ramalho ai manda um abraço pro paula tejano"
-Saída: {{"is_pedido_musical": true, "musica": "Chão de Giz", "artista": "Zé Ramalho", "is_flashback": true, "is_apropriado": false, "is_confiante": true, "is_saudacao": false, "genero": "mpb"}}
+Saída: {{"is_pedido_musical": true, "musica": "Chão de Giz", "artista": "Zé Ramalho", "is_flashback": true, "is_apropriado": false, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": false, "genero": "mpb"}}
 
 Entrada: "oi passando pra desejar uma ótima tarde"
-Saída: {{"is_pedido_musical": false, "musica": "", "artista": "", "is_flashback": false, "is_apropriado": true, "is_confiante": true, "is_saudacao": true, "genero": ""}}
+Saída: {{"is_pedido_musical": false, "musica": "", "artista": "", "is_flashback": false, "is_apropriado": true, "is_confiante": true, "is_saudacao": true, "is_pedido_explicito": false, "genero": ""}}
 """.strip()

@@ -18,7 +18,7 @@ Regras de negócio aplicadas:
 Fluxo (quando autorizado):
     1. STT      : se path_ogg, transcreve → texto
     2. LLM      : extrai artista/música + valida is_flashback + is_apropriado
-    3. Acervo   : busca música no DuckDB local
+    3. Acervo   : busca música no PostgreSQL (Supabase)
     4. Download : se não existir, baixa do YouTube e processa com ffmpeg
     5. Mixer    : sobrepõe voz + música com transição suave
     6. Entrega  : move .mp3 para a fila do ZaraRadio
@@ -105,12 +105,18 @@ def processar_pedido(
 
         # Mensagem fora do escopo do bot
         if not metadados.is_pedido_musical:
-            if metadados.is_saudacao and not database.verificar_interacao_recente(numero):
-                print("[PIPELINE] Novo ouvinte — enviando msg_saudacao.")
-                database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="saudacao")
-                return _resultado(False, None, config_radio.MSG_SAUDACAO)
-            print("[PIPELINE] Não é pedido musical — ignorando silenciosamente.")
-            return _resultado(False, None, None)
+            if metadados.is_saudacao:
+                if not database.verificar_interacao_recente(numero):
+                    # Novo ouvinte — saudação completa (já contém o menu)
+                    print("[PIPELINE] Novo ouvinte — enviando msg_saudacao com menu.")
+                    database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="saudacao")
+                    return _resultado(False, None, config_radio.MSG_SAUDACAO, mostrar_menu=True)
+                # Ouvinte recorrente — resposta curta sem menu (cobre "valeu", "tchau", etc.)
+                print("[PIPELINE] Saudação recorrente — enviando msg_agradecimento.")
+                return _resultado(False, None, config_radio.MSG_AGRADECIMENTO)
+            # Não-musical e não-saudação — apresenta o menu
+            print("[PIPELINE] Mensagem fora de escopo — enviando menu.")
+            return _resultado(False, None, config_radio.MSG_MENU, mostrar_menu=True)
 
         if not metadados.is_apropriado:
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="inapropriado", genero=metadados.genero)
@@ -127,7 +133,7 @@ def processar_pedido(
         if not metadados.is_confiante and not _is_retry:
             if not metadados.musica or not metadados.artista:
                 database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado")
-                return _resultado(False, None, config_radio.MSG_NAO_ID)
+                return _resultado(False, None, config_radio.MSG_NAO_ID, aguardando_pedido=True)
             if path_ogg:
                 database.criar_pendencia(numero, path_ogg, metadados.artista, metadados.musica)
                 msg = config_radio.MSG_CONFIRMACAO.format(
@@ -143,12 +149,12 @@ def processar_pedido(
 
         if not metadados.musica or not metadados.artista:
             database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado")
-            return _resultado(False, None, config_radio.MSG_NAO_ID)
+            return _resultado(False, None, config_radio.MSG_NAO_ID, aguardando_pedido=True)
 
         if not metadados.is_flashback:
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="nao_flashback", genero=metadados.genero)
             msg = config_radio.MSG_NAO_REPERTORIO.format(musica=metadados.musica, artista=metadados.artista)
-            return _resultado(False, None, msg)
+            return _resultado(False, None, msg, aguardando_pedido=True)
 
         # --- Etapa 3: Busca no Acervo Local ---
         _log_etapa(3, "Busca no acervo local")
@@ -205,7 +211,14 @@ def processar_pedido(
 
         msg = config_radio.MSG_SUCESSO.format(artista=metadados.artista, musica=metadados.musica)
         _log_separador(f"Concluído: {nome_saida}")
-        return _resultado(True, path_final, msg)
+        return _resultado(
+            True,
+            path_final,
+            msg,
+            artista=metadados.artista,
+            musica=metadados.musica,
+            is_pedido_explicito=metadados.is_pedido_explicito,
+        )
 
     except Exception as e:
         print(f"[PIPELINE] Erro tecnico: {e}")
@@ -220,8 +233,28 @@ def processar_pedido(
 
 # --- Helpers internos ---
 
-def _resultado(sucesso: bool, path_audio: str | None, mensagem: str | None, pendente: bool = False) -> dict:
-    return {"sucesso": sucesso, "path_audio": path_audio, "mensagem": mensagem, "pendente": pendente}
+def _resultado(
+    sucesso: bool,
+    path_audio: str | None,
+    mensagem: str | None,
+    pendente: bool = False,
+    mostrar_menu: bool = False,
+    aguardando_pedido: bool = False,
+    artista: str | None = None,
+    musica: str | None = None,
+    is_pedido_explicito: bool = False,
+) -> dict:
+    return {
+        "sucesso": sucesso,
+        "path_audio": path_audio,
+        "mensagem": mensagem,
+        "pendente": pendente,
+        "mostrar_menu": mostrar_menu,
+        "aguardando_pedido": aguardando_pedido,
+        "artista": artista,
+        "musica": musica,
+        "is_pedido_explicito": is_pedido_explicito,
+    }
 
 
 def _gerar_nome_arquivo(artista: str, musica: str) -> str:
