@@ -94,12 +94,15 @@ async def _liberar_numero(numero: str) -> None:
 # Máquina de estados por ouvinte (em memória)
 # ---------------------------------------------------------------------------
 # Estados possíveis:
-#   "aguardando_menu"   : menu foi enviado; aguardando resposta "1" ou "2"
+#   "aguardando_menu"   : menu foi enviado; aguardando resposta "1", "2" ou "3"
 #   "aguardando_pedido" : bot está esperando o nome da música (após "1" do menu
 #                          ou após MSG_NAO_ID / MSG_NAO_REPERTORIO). Suprime o
 #                          menu para evitar regressão da conversa.
 #   "producao"          : ouvinte optou por falar com a produção; pipeline
 #                          desativado até o timer expirar (sem chamada ao LLM)
+#   "pos_sucesso"       : ouvinte acabou de ter um pedido atendido; qualquer
+#                          mensagem dispara MSG_MENU_POS_SUCESSO direto, sem LLM,
+#                          dando opção de novo pedido / produção / encerrar.
 # Ausência de entrada no dict = estado neutro (comportamento padrão).
 _estados_ouvinte: dict[str, dict] = {}
 _lock_estados = asyncio.Lock()
@@ -107,6 +110,7 @@ _lock_estados = asyncio.Lock()
 PRODUCAO_TIMEOUT_S: int = int(os.getenv("PRODUCAO_TIMEOUT_MIN", "30")) * 60
 _AGUARDANDO_MENU_TIMEOUT_S: int = 5 * 60     # 5 min para responder o menu
 _AGUARDANDO_PEDIDO_TIMEOUT_S: int = 5 * 60   # 5 min para mandar o nome da música
+_POS_SUCESSO_TIMEOUT_S: int = 10 * 60        # 10 min de janela de continuação após sucesso
 
 # --- Pílulas de curiosidade musical ---
 PILULAS_ATIVADAS: bool = os.getenv("PILULAS_ATIVADAS", "true").lower() == "true"
@@ -178,6 +182,28 @@ async def _esta_aguardando_pedido(numero: str) -> bool:
     async with _lock_estados:
         estado = _estados_ouvinte.get(numero)
         if not estado or estado["modo"] != "aguardando_pedido":
+            return False
+        if time.time() > estado["expira_em"]:
+            del _estados_ouvinte[numero]
+            return False
+        return True
+
+
+async def _ativar_pos_sucesso(numero: str) -> None:
+    """Marca o ouvinte como 'recém-atendido'. Janela de 10 min onde qualquer
+    mensagem dispara o menu de continuação, sem passar pelo LLM."""
+    async with _lock_estados:
+        _estados_ouvinte[numero] = {
+            "modo": "pos_sucesso",
+            "expira_em": time.time() + _POS_SUCESSO_TIMEOUT_S,
+        }
+
+
+async def _esta_pos_sucesso(numero: str) -> bool:
+    """Retorna True se o ouvinte está em pos_sucesso e o timer ainda não expirou."""
+    async with _lock_estados:
+        estado = _estados_ouvinte.get(numero)
+        if not estado or estado["modo"] != "pos_sucesso":
             return False
         if time.time() > estado["expira_em"]:
             del _estados_ouvinte[numero]
@@ -509,6 +535,16 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         print(f"[WEBHOOK] {numero} em modo produção — mensagem ignorada pelo bot.")
         return JSONResponse({"status": "production_mode"})
 
+    # --- Pós-sucesso: dentro da janela de 10 min, qualquer mensagem dispara o
+    # menu de continuação direto, sem chamar o LLM. Transita para aguardando_menu.
+    if await _esta_pos_sucesso(numero):
+        await _ativar_aguardando_menu(numero)
+        background_tasks.add_task(
+            _enviar_resposta_menu, numero, config_radio.MSG_MENU_POS_SUCESSO
+        )
+        print(f"[WEBHOOK] {numero} em pos_sucesso — enviando menu de continuação.")
+        return JSONResponse({"status": "pos_sucesso_menu"})
+
     # WAHA NOWEB não envia campo "type"; detectamos o tipo pelo conteúdo:
     #   - hasMedia=True + mimetype "audio/*" → mensagem de áudio (ptt/audio)
     #   - caso contrário → mensagem de texto (body)
@@ -547,6 +583,12 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
                     _enviar_resposta_menu, numero, config_radio.MSG_PRODUCAO_ATIVADO
                 )
                 return JSONResponse({"status": "menu_producao"})
+            if escolha in ("3", "3️⃣", "encerrar", "encerrar contato", "sair", "tchau"):
+                # Estado já foi consumido por _consumir_aguardando_menu; só envia despedida.
+                background_tasks.add_task(
+                    _enviar_resposta_menu, numero, config_radio.MSG_ENCERRAMENTO
+                )
+                return JSONResponse({"status": "menu_encerramento"})
             # Qualquer outra coisa: assume que o ouvinte já mandou o pedido direto
 
         if not await _reservar_numero(numero):
@@ -585,10 +627,14 @@ async def _aplicar_resultado_pipeline(
     sucesso = resultado.get("sucesso", False)
     pendente = resultado.get("pendente", False)
 
-    # Suprime menu para ouvinte que já estava aguardando o pedido
+    # Ouvinte em aguardando_pedido mandou algo que o LLM não reconheceu como
+    # pedido musical — envia MSG_NAO_ID e renova o timer em vez de silêncio.
     if mostrar_menu and was_aguardando_pedido:
-        await _ativar_aguardando_pedido(numero)  # renova timer
-        print(f"[ESTADO] {numero}: menu suprimido (aguardando_pedido ativo).")
+        await _ativar_aguardando_pedido(numero)
+        await asyncio.to_thread(
+            lambda: whatsapp.enviar_mensagem(numero, config_radio.MSG_NAO_ID)
+        )
+        print(f"[ESTADO] {numero}: aguardando_pedido — enviando MSG_NAO_ID.")
         return
 
     if mensagem:
@@ -600,11 +646,13 @@ async def _aplicar_resultado_pipeline(
         return  # pendência (DB) tem prioridade — não muda o estado em memória
 
     if sucesso:
-        await _limpar_estado(numero)
+        # Ativa janela pós-sucesso (10 min) — qualquer mensagem nesse intervalo
+        # dispara o menu de continuação (1: nova música / 2: produção / 3: encerrar)
+        await _ativar_pos_sucesso(numero)
         # Dispara pílula de curiosidade em background (não bloqueia)
         artista = resultado.get("artista")
         musica = resultado.get("musica")
-        if artista and musica and resultado.get("is_pedido_explicito"):
+        if artista and musica:
             asyncio.create_task(_enviar_pilula_bg(numero, artista, musica))
     elif mostrar_menu:
         await _ativar_aguardando_menu(numero)

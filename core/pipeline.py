@@ -103,20 +103,12 @@ def processar_pedido(
         _log_etapa(2, "Análise LLM")
         metadados = intelligence.analisar(texto)
 
-        # Mensagem fora do escopo do bot
+        # Qualquer mensagem fora do escopo musical (saudação, agradecimento,
+        # pergunta solta) apresenta o menu. A janela pós-sucesso é tratada antes,
+        # no webhook, com MSG_MENU_POS_SUCESSO.
         if not metadados.is_pedido_musical:
-            if metadados.is_saudacao:
-                if not database.verificar_interacao_recente(numero):
-                    # Novo ouvinte — saudação completa (já contém o menu)
-                    print("[PIPELINE] Novo ouvinte — enviando msg_saudacao com menu.")
-                    database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="saudacao")
-                    return _resultado(False, None, config_radio.MSG_SAUDACAO, mostrar_menu=True)
-                # Ouvinte recorrente — resposta curta sem menu (cobre "valeu", "tchau", etc.)
-                print("[PIPELINE] Saudação recorrente — enviando msg_agradecimento.")
-                return _resultado(False, None, config_radio.MSG_AGRADECIMENTO)
-            # Não-musical e não-saudação — apresenta o menu
             print("[PIPELINE] Mensagem fora de escopo — enviando menu.")
-            return _resultado(False, None, config_radio.MSG_MENU, mostrar_menu=True)
+            return _resultado(False, None, config_radio.MSG_SAUDACAO, mostrar_menu=True)
 
         if not metadados.is_apropriado:
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="inapropriado", genero=metadados.genero)

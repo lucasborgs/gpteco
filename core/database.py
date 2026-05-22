@@ -213,27 +213,6 @@ def inserir_musica(artista: str, musica: str, file_path: str) -> int:
         con.close()
 
 
-def verificar_interacao_recente(numero: str, horas: int = 24) -> bool:
-    """
-    Retorna True se o número teve qualquer interação nas últimas N horas.
-    Usado para enviar msg_saudacao apenas uma vez por sessão de 24h.
-    """
-    con = _get_connection()
-    try:
-        with con.cursor() as cur:
-            cur.execute("""
-                SELECT max(timestamp_pedido)
-                FROM dim_pedidos
-                WHERE numero = %s
-            """, [numero])
-            resultado = cur.fetchone()
-        if not resultado or resultado[0] is None:
-            return False
-        return (datetime.now() - resultado[0]) < timedelta(hours=horas)
-    finally:
-        con.close()
-
-
 def verificar_cooldown(numero: str, horas: int = 6) -> bool:
     """
     Verifica se o número de telefone pode fazer um novo pedido.

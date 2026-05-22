@@ -78,7 +78,8 @@ def analisar(texto_transcrito: str) -> MetadadosMusica:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": texto_transcrito},
             ],
-            temperature=0.1,  # Baixa temperatura para respostas determinísticas
+            temperature=0,   # Determinístico — reduz oscilação em casos borderline
+            seed=42,         # Fixa a saída para inputs idênticos (reprodutibilidade)
         )
     except Exception as e:
         raise RuntimeError(f"Falha na chamada ao LLM: {e}") from e
@@ -90,6 +91,11 @@ def analisar(texto_transcrito: str) -> MetadadosMusica:
         dados = json.loads(conteudo)
     except json.JSONDecodeError as e:
         raise ValueError(f"LLM retornou JSON inválido: {conteudo}") from e
+
+    # Raciocínio (chain-of-thought) é apenas observabilidade — loga e descarta.
+    raciocinio = dados.get("raciocinio")
+    if raciocinio is not None:
+        print(f"[LLM] Raciocínio: {json.dumps(raciocinio, ensure_ascii=False)}")
 
     campos_esperados = {"is_pedido_musical", "musica", "artista", "is_flashback", "is_apropriado", "is_confiante"}
     campos_faltando = campos_esperados - set(dados.keys())

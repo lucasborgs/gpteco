@@ -41,7 +41,7 @@ TAREFA: dada uma música e seu artista, gere UMA curiosidade interessante e veri
 
 REGRAS:
 
-1. FOCO NA MÚSICA. Fale sobre composição, gravação, lançamento, inspiração, recepção ou impacto cultural da faixa específica. Cite o artista apenas quando a informação sobre ele for indispensável para a curiosidade (ex: era póstuma, primeira composição autoral, marcou uma virada de carreira).
+1. FOCO NO ESPECÍFICO. A curiosidade deve girar em torno da faixa ou de algo diretamente ligado a ela — composição, gravação, lançamento, inspiração, recepção, impacto cultural, ou um fato marcante sobre o artista naquele momento (ex: era póstuma, primeira composição autoral, virada de carreira, contexto de vida que originou a letra). Evite generalidades sobre a carreira ou a importância do artista que existiriam independentemente da música pedida.
 
 2. ANTIALUCINAÇÃO. Use APENAS fatos que você sabe com alta certeza. Antes de redigir, verifique mentalmente: ano de lançamento, álbum, autor da composição e país de origem. Se houver qualquer dúvida sobre um desses, responda tem_certeza=false e texto vazio. NUNCA use "provavelmente", "acredita-se", "diz-se que" — se precisa hedgear, é porque não tem certeza.
 
@@ -104,7 +104,7 @@ def gerar_pilula(artista: str, musica: str) -> str | None:
                 {"role": "system", "content": SYSTEM_PROMPT_CURADOR},
                 {"role": "user", "content": entrada},
             ],
-            temperature=0.3,
+            temperature=0.35,
         )
     except Exception as e:
         print(f"[CURADOR] Falha na chamada ao LLM: {e}")
