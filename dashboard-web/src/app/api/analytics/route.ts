@@ -39,7 +39,6 @@ export async function GET(request: NextRequest) {
       heatmapDetalhe,
       taxa,
       ouvintes,
-      dddRaw,
       artistas,
       generos,
       generosDetalhe,
@@ -102,20 +101,6 @@ export async function GET(request: NextRequest) {
         GROUP BY numero_real
         ORDER BY pedidos DESC
       `, dateParams),
-      // breakdown_ddd — usa COALESCE para pegar telefone real quando disponível
-      client.query(`
-        SELECT COALESCE(telefone, numero) AS numero_real, COUNT(*) AS pedidos
-        FROM dim_pedidos
-        WHERE TRUE ${dateWhere}
-        GROUP BY numero_real
-      `, dateParams).catch(() =>
-        client.query(`
-          SELECT numero AS numero_real, COUNT(*) AS pedidos
-          FROM dim_pedidos
-          WHERE TRUE ${dateWhere}
-          GROUP BY numero
-        `, dateParams)
-      ),
       // top_artistas (filtrado pelo período)
       client.query(`
         SELECT artista, COUNT(*) AS pedidos
@@ -159,7 +144,8 @@ export async function GET(request: NextRequest) {
       // pedidos_individuais — lista completa (incluindo falhas) para filtro cruzado e MetricCards
       client.query(`
         SELECT COALESCE(artista, '') AS artista, COALESCE(musica, '') AS musica,
-               COALESCE(genero, '') AS genero, numero, sucesso,
+               COALESCE(genero, '') AS genero, COALESCE(telefone, numero) AS numero, sucesso,
+               motivo_rejeicao,
                timestamp_pedido AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo' AS data_pedido
         FROM dim_pedidos
         WHERE (motivo_rejeicao IS NULL OR motivo_rejeicao != 'saudacao')
@@ -212,17 +198,6 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // --- Transform DDD ---
-    const dddCount: Record<string, number> = {}
-    dddRaw.rows.forEach(r => {
-      const base = (r.numero_real || '').split('@')[0]
-      const ddd = base.length >= 12 && base.startsWith('55') ? base.slice(2, 4) : '??'
-      dddCount[ddd] = (dddCount[ddd] || 0) + Number(r.pedidos)
-    })
-    const breakdown_ddd = Object.entries(dddCount)
-      .sort((a, b) => b[1] - a[1])
-      .map(([ddd, pedidos]) => ({ ddd, pedidos }))
-
     return NextResponse.json({
       top_musicas_all_time: topAllTime.rows.map(r => ({
         artista: r.artista,
@@ -249,7 +224,6 @@ export async function GET(request: NextRequest) {
       })),
       taxa_atendimento: { total, sucesso: aceitos, recusado: recusados, taxa_sucesso_pct, por_motivo },
       ouvintes_engajados,
-      breakdown_ddd,
       top_artistas: artistas.rows.map(r => ({ artista: r.artista, pedidos: Number(r.pedidos) })),
       top_generos: generos.rows.map(r => ({ genero: r.genero, pedidos: Number(r.pedidos) })),
       generos_detalhe: generosDetalhe.rows.map(r => ({ genero: r.genero, artista: r.artista, musica: r.musica, pedidos: Number(r.pedidos) })),
@@ -262,6 +236,7 @@ export async function GET(request: NextRequest) {
           genero: r.genero,
           numero: r.numero,
           sucesso: Boolean(r.sucesso),
+          motivo: r.sucesso ? 'sucesso' : (r.motivo_rejeicao || 'desconhecido'),
           data_pedido: d.toLocaleString('pt-BR'),
           hora: d.getHours(),
           dia_semana: (d.getDay() + 6) % 7,

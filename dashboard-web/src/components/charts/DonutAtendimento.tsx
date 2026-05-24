@@ -1,13 +1,17 @@
 'use client'
 
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { TaxaAtendimento } from '@/types/analytics'
 
 interface Props {
   data: TaxaAtendimento
+  selectedMotivos?: Set<string>
+  onMotivoClick?: (motivos: Set<string>) => void
+  compact?: boolean
 }
 
 const MOTIVO_CONFIG: Record<string, { label: string; color: string }> = {
+  sucesso: { label: 'Atendidos', color: '#1DB954' },
   cooldown: { label: 'Cooldown', color: '#EAB308' },
   nao_flashback: { label: 'Fora do repertório', color: '#F97316' },
   nao_identificado: { label: 'Não identificado', color: '#9CA3AF' },
@@ -16,51 +20,98 @@ const MOTIVO_CONFIG: Record<string, { label: string; color: string }> = {
   desconhecido: { label: 'Outros', color: '#6B7280' },
 }
 
-export function DonutAtendimento({ data }: Props) {
-  const chartData: { name: string; value: number; color: string }[] = [
-    { name: 'Atendidos', value: data.sucesso, color: '#1DB954' },
-  ]
+function configFor(key: string) {
+  return MOTIVO_CONFIG[key] || MOTIVO_CONFIG.desconhecido
+}
 
-  // Adiciona cada motivo de recusa como segmento separado
+export function DonutAtendimento({ data, selectedMotivos, onMotivoClick, compact = false }: Props) {
+  const hasSelection = selectedMotivos && selectedMotivos.size > 0
+
+  const chartData: { motivoKey: string; name: string; value: number; color: string }[] = [
+    { motivoKey: 'sucesso', name: 'Atendidos', value: data.sucesso, color: MOTIVO_CONFIG.sucesso.color },
+  ]
   Object.entries(data.por_motivo).forEach(([motivo, qtd]) => {
     if (qtd > 0) {
-      const config = MOTIVO_CONFIG[motivo] || MOTIVO_CONFIG.desconhecido
-      chartData.push({ name: config.label, value: qtd, color: config.color })
+      const cfg = configFor(motivo)
+      chartData.push({ motivoKey: motivo, name: cfg.label, value: qtd, color: cfg.color })
     }
   })
 
+  const toggle = (key: string) => {
+    if (!onMotivoClick || !selectedMotivos) return
+    const next = new Set(selectedMotivos)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    onMotivoClick(next)
+  }
+
+  const pieH = compact ? 160 : 240
+  const inner = compact ? 36 : 58
+  const outer = compact ? 56 : 88
+
   return (
-    <div className="flex flex-col items-center">
-      <ResponsiveContainer width="100%" height={260}>
-        <PieChart>
-          <Pie
-            data={chartData}
-            cx="50%"
-            cy="50%"
-            innerRadius={55}
-            outerRadius={85}
-            dataKey="value"
-            paddingAngle={2}
-          >
-            {chartData.map((entry, i) => (
-              <Cell key={i} fill={entry.color} />
-            ))}
-          </Pie>
-          <Tooltip
-            contentStyle={{ borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13 }}
-            formatter={(v: unknown, name: unknown) => [`${v as number} pedidos`, String(name ?? '')]}
-          />
-          <Legend
-            iconType="circle"
-            iconSize={8}
-            wrapperStyle={{ fontSize: 12 }}
-          />
-        </PieChart>
-      </ResponsiveContainer>
-      <p className="text-3xl font-data font-normal text-content-primary -mt-2">
-        {data.taxa_sucesso_pct}%
-      </p>
-      <p className="text-xs text-content-secondary mt-1">taxa de atendimento</p>
+    <div className="flex items-center justify-center gap-4 flex-wrap">
+      {/* Donut sem texto central */}
+      <div className={compact ? 'w-[140px]' : 'w-[200px]'}>
+        <ResponsiveContainer width="100%" height={pieH}>
+          <PieChart>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              innerRadius={inner}
+              outerRadius={outer}
+              dataKey="value"
+              paddingAngle={2}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onClick={(entry: any) => entry?.motivoKey && toggle(entry.motivoKey)}
+              style={{ cursor: onMotivoClick ? 'pointer' : undefined }}
+              isAnimationActive={false}
+            >
+              {chartData.map((entry, i) => {
+                const selected = selectedMotivos?.has(entry.motivoKey) ?? false
+                return (
+                  <Cell
+                    key={i}
+                    fill={entry.color}
+                    opacity={hasSelection && !selected ? 0.3 : 1}
+                    stroke={selected ? '#111' : '#fff'}
+                    strokeWidth={selected ? 2 : 1}
+                  />
+                )
+              })}
+            </Pie>
+            <Tooltip
+              contentStyle={{ borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13 }}
+              formatter={(v: unknown, name: unknown) => [`${v as number} pedidos`, String(name ?? '')]}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Legenda interativa */}
+      <ul className="space-y-1.5 text-xs">
+        {chartData.map(entry => {
+          const selected = selectedMotivos?.has(entry.motivoKey) ?? false
+          return (
+            <li key={entry.motivoKey}>
+              <button
+                onClick={() => toggle(entry.motivoKey)}
+                disabled={!onMotivoClick}
+                className={`flex items-center gap-2 w-full text-left rounded px-1.5 py-0.5 transition-colors ${
+                  onMotivoClick ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'
+                } ${selected ? 'bg-gray-100 font-semibold' : ''} ${
+                  hasSelection && !selected ? 'opacity-50' : ''
+                }`}
+              >
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+                <span className="text-content-secondary">{entry.name}</span>
+                <span className="font-data text-content-primary ml-auto pl-2">{entry.value}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }

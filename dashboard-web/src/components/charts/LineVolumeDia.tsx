@@ -7,6 +7,7 @@ interface Props {
   data: VolumeDiaMes[]
   selectedDates?: Set<string>
   onSelectionChange?: (dates: Set<string>) => void
+  height?: number | string
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,7 +30,7 @@ function CustomDot(props: any) {
   )
 }
 
-export function LineVolumeDia({ data, selectedDates, onSelectionChange }: Props) {
+export function LineVolumeDia({ data, selectedDates, onSelectionChange, height = 200 }: Props) {
   const hasSelection = selectedDates && selectedDates.size > 0
 
   const handleClick = (point: any) => {
@@ -42,7 +43,7 @@ export function LineVolumeDia({ data, selectedDates, onSelectionChange }: Props)
   }
 
   return (
-    <ResponsiveContainer width="100%" height={200}>
+    <ResponsiveContainer width="100%" height={height}>
       <LineChart data={data} onClick={handleClick}>
         <XAxis
           dataKey="dia"
@@ -64,6 +65,7 @@ export function LineVolumeDia({ data, selectedDates, onSelectionChange }: Props)
           dataKey="pedidos"
           stroke="#2E86AB"
           strokeWidth={2}
+          connectNulls
           dot={<CustomDot selectedDates={selectedDates} hasSelection={hasSelection} />}
           activeDot={false}
         />

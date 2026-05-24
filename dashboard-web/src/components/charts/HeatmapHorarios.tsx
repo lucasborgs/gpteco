@@ -76,8 +76,8 @@ export function HeatmapHorarios({ data, detalhe, selectedCells, onSelectionChang
   return (
     <div className="relative">
       <div onMouseLeave={() => setHovered(null)}>
-        <div className="overflow-x-auto">
-          <div className="inline-grid gap-px" style={{ gridTemplateColumns: '40px repeat(7, 1fr)', minWidth: 480 }}>
+        <div>
+          <div className="grid gap-px w-full" style={{ gridTemplateColumns: '40px repeat(7, 1fr)' }}>
             <div />
             {DIAS.map((d, i) => (
               <div

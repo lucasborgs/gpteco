@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import AppSidebar from '@/components/layout/AppSidebar'
+import { FiltersProvider } from '@/lib/filters-context'
 
 export const metadata: Metadata = {
   title: 'Rádio Dashboard',
@@ -14,9 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR">
-      <body className="flex min-h-screen bg-app-bg">
-        <AppSidebar />
-        <main className="flex-1 min-w-0 overflow-auto pb-16 md:pb-0">{children}</main>
+      <body className="min-h-screen bg-app-bg">
+        <FiltersProvider>
+          <main className="min-h-screen">{children}</main>
+        </FiltersProvider>
       </body>
     </html>
   )

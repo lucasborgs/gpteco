@@ -31,11 +31,6 @@ export interface OuvinteEngajado {
   primeiro_pedido: string
 }
 
-export interface DDDItem {
-  ddd: string
-  pedidos: number
-}
-
 export interface ArtistaItem {
   artista: string
   pedidos: number
@@ -70,6 +65,8 @@ export interface PedidoIndividual {
   hora: number
   dia_semana: number
   sucesso: boolean
+  /** 'sucesso' quando atendido; o motivo da recusa caso contrário. */
+  motivo: string
 }
 
 export interface VolumeDiaMes {
@@ -84,7 +81,6 @@ export interface AnalyticsData {
   heatmap_detalhe: HeatmapDetalhe[]
   taxa_atendimento: TaxaAtendimento
   ouvintes_engajados: OuvinteEngajado[]
-  breakdown_ddd: DDDItem[]
   top_artistas: ArtistaItem[]
   top_generos: GeneroItem[]
   generos_detalhe: GeneroDetalhe[]

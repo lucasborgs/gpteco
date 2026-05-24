@@ -4,9 +4,15 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
-const navLinks = [
-  { href: '/geral', label: 'Geral', icon: '♫' },
-  { href: '/audiencia', label: 'Audiência', icon: '◉' },
+const desktopLinks = [
+  { href: '/painel', label: 'Visão Geral' },
+  { href: '/insights', label: 'Análise por IA' },
+]
+
+// Mobile: a IA vira uma aba separada (mesmo estilo das abas antigas).
+const mobileLinks = [
+  { href: '/painel', label: 'Painel', icon: '♫' },
+  { href: '/insights', label: 'Insights', icon: '✦' },
 ]
 
 export default function AppSidebar() {
@@ -23,7 +29,7 @@ export default function AppSidebar() {
           <span className="font-heading font-bold text-content-primary text-base">Rádio FM</span>
         </div>
         <nav className="flex flex-col gap-1 p-3 flex-1">
-          {navLinks.map((link) => {
+          {desktopLinks.map((link) => {
             const active = pathname === link.href
             return (
               <Link
@@ -31,9 +37,7 @@ export default function AppSidebar() {
                 href={link.href}
                 className={cn(
                   'flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                  active
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-content-secondary hover:bg-gray-100'
+                  active ? 'bg-primary/10 text-primary' : 'text-content-secondary hover:bg-gray-100',
                 )}
               >
                 {link.label}
@@ -43,9 +47,9 @@ export default function AppSidebar() {
         </nav>
       </aside>
 
-      {/* Mobile bottom nav */}
+      {/* Mobile bottom nav — oculto em md+ (onde a sidebar já traz os links) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border flex justify-around py-2 px-1">
-        {navLinks.map((link) => {
+        {mobileLinks.map((link) => {
           const active = pathname === link.href
           return (
             <Link
@@ -53,7 +57,7 @@ export default function AppSidebar() {
               href={link.href}
               className={cn(
                 'flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-xs font-medium transition-colors min-w-[64px]',
-                active ? 'text-primary' : 'text-content-secondary'
+                active ? 'text-primary' : 'text-content-secondary',
               )}
             >
               <span className="text-lg">{link.icon}</span>
