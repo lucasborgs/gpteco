@@ -15,6 +15,7 @@ import type { AnalyticsData } from '@/types/analytics'
 interface FiltersContextValue {
   data: AnalyticsData | null
   loading: boolean
+  error: string | null
   from: string | null
   to: string | null
   /** Altera o período, limpa os cross-filters e recarrega. */
@@ -46,6 +47,7 @@ function syncDateToUrl(from: string | null, to: string | null) {
 export function FiltersProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [from, setFrom] = useState<string | null>(null)
   const [to, setTo] = useState<string | null>(null)
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set())
@@ -55,9 +57,13 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
 
   const fetchFor = useCallback((f: string | null, t: string | null) => {
     setLoading(true)
+    setError(null)
     fetchAnalytics(f, t)
-      .then(setData)
-      .catch(console.error)
+      .then(d => { setData(d); setError(null) })
+      .catch((err: unknown) => {
+        console.error(err)
+        setError(err instanceof Error ? err.message : 'Erro ao carregar dados')
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -98,14 +104,14 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
     selectedMotivos.size > 0
 
   const value = useMemo<FiltersContextValue>(() => ({
-    data, loading, from, to, setDateRange, reload,
+    data, loading, error, from, to, setDateRange, reload,
     selectedCells, setSelectedCells,
     selectedGeneros, setSelectedGeneros,
     selectedDates, setSelectedDates,
     selectedMotivos, setSelectedMotivos,
     hasCrossFilters, clearCrossFilters,
   }), [
-    data, loading, from, to, setDateRange, reload,
+    data, loading, error, from, to, setDateRange, reload,
     selectedCells, selectedGeneros, selectedDates, selectedMotivos,
     hasCrossFilters, clearCrossFilters,
   ])

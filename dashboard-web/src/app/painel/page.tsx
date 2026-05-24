@@ -24,7 +24,7 @@ const MOTIVO_LABELS: Record<string, string> = {
 
 export default function PainelPage() {
   const {
-    from, to, setDateRange, reload, loading,
+    from, to, setDateRange, reload, loading, error,
     selectedCells, setSelectedCells,
     selectedGeneros, setSelectedGeneros,
     selectedDates, setSelectedDates,
@@ -137,10 +137,18 @@ export default function PainelPage() {
         )}
       </header>
 
+      {/* Banner de erro */}
+      {error && !loading && (
+        <div className="shrink-0 mx-4 sm:mx-6 mt-2 px-4 py-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between gap-3">
+          <p className="text-xs text-red-700 font-medium">Erro ao carregar dados: {error}</p>
+          <button onClick={reload} className="text-xs text-red-700 underline hover:text-red-900 shrink-0">Tentar novamente</button>
+        </div>
+      )}
+
       {/* Linha 1 — Totalizadores compactos */}
       <div className="shrink-0 px-4 sm:px-6 py-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {loading
-          ? [...Array(5)].map((_, i) => (
+          ? [...Array(4)].map((_, i) => (
               <div key={i} className="h-[54px] bg-gray-200 rounded-lg animate-pulse" />
             ))
           : metrics.map(({ label, value, hint }) => (
