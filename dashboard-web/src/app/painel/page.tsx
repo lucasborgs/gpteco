@@ -145,28 +145,26 @@ export default function PainelPage() {
             ))}
       </div>
 
-      {/* Linhas 2 e 3 — Gráficos (cabem na tela) */}
-      <div className="flex-1 min-h-0 px-6 pb-3">
+      {/* Linhas 2 e 3 — Gráficos */}
+      {/* mobile: altura natural (página scrolla); desktop lg: preenche viewport */}
+      <div className="shrink-0 px-6 pb-3 lg:flex-1 lg:min-h-0">
         {loading ? (
-          <div className="h-full grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="bg-gray-200 rounded-xl animate-pulse" />
+          <div className="grid grid-cols-1 gap-4 lg:h-full lg:grid-cols-2">
+            <div className="h-64 lg:h-auto bg-gray-200 rounded-xl animate-pulse" />
             <div className="flex flex-col gap-4">
-              <div className="flex-1 bg-gray-200 rounded-xl animate-pulse" />
-              <div className="h-[270px] grid grid-cols-2 gap-4">
-                <div className="bg-gray-200 rounded-xl animate-pulse" />
-                <div className="bg-gray-200 rounded-xl animate-pulse" />
-              </div>
+              <div className="h-[290px] bg-gray-200 rounded-xl animate-pulse" />
+              <div className="h-64 lg:flex-1 bg-gray-200 rounded-xl animate-pulse" />
             </div>
           </div>
         ) : (
-          <div className="h-full grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:h-full lg:grid-cols-2">
 
             {/* Esquerda — Mapa da Audiência */}
-            <div className="bg-white rounded-xl border border-border p-4 flex flex-col overflow-hidden">
+            <div className="bg-white rounded-xl border border-border p-4 flex flex-col lg:overflow-hidden">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-content-secondary mb-3 shrink-0">
                 Mapa da Audiência
               </h2>
-              <div className="flex-1 overflow-y-auto min-h-0">
+              <div className="overflow-x-auto lg:flex-1 lg:overflow-y-auto lg:min-h-0 lg:overflow-x-hidden">
                 <HeatmapHorarios
                   data={filteredHeatmapData}
                   detalhe={filteredHeatmapDetalhe}
@@ -177,11 +175,11 @@ export default function PainelPage() {
             </div>
 
             {/* Direita — Volume e Donut + Gêneros */}
-            <div className="flex flex-col gap-4 min-h-0">
+            <div className="flex flex-col gap-4 lg:min-h-0">
 
-              {/* Volume + Taxa — altura fixa, lado a lado */}
-              <div className="shrink-0 h-[290px] grid grid-cols-2 gap-4">
-                <div className="bg-white rounded-xl border border-border p-4 flex flex-col">
+              {/* Volume + Taxa — lado a lado (colapsa para 1 col em mobile estreito) */}
+              <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl border border-border p-4 flex flex-col h-[260px] sm:h-[290px]">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-content-secondary mb-2 shrink-0">
                     Volume por Dia
                   </h2>
@@ -194,7 +192,7 @@ export default function PainelPage() {
                     />
                   </div>
                 </div>
-                <div className="bg-white rounded-xl border border-border p-4 flex flex-col">
+                <div className="bg-white rounded-xl border border-border p-4 flex flex-col h-[260px] sm:h-[290px]">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-content-secondary mb-2 shrink-0">
                     Taxa de Atendimento
                   </h2>
@@ -209,8 +207,8 @@ export default function PainelPage() {
                 </div>
               </div>
 
-              {/* Gêneros Mais Pedidos — preenche o espaço disponível */}
-              <div className="flex-1 min-h-0 bg-white rounded-xl border border-border p-4 overflow-y-auto">
+              {/* Gêneros Mais Pedidos */}
+              <div className="bg-white rounded-xl border border-border p-4 lg:flex-1 lg:min-h-0 lg:overflow-y-auto">
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-content-secondary mb-3">
                   Gêneros Mais Pedidos
                 </h2>
