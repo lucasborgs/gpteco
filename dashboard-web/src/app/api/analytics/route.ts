@@ -251,8 +251,9 @@ export async function GET(request: NextRequest) {
       }),
     })
   } catch (err) {
-    console.error('[API] Analytics error:', err)
-    return NextResponse.json({ error: 'Erro ao buscar dados' }, { status: 500 })
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[API] Analytics error:', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
   } finally {
     client.release()
   }

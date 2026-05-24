@@ -6,6 +6,9 @@ export async function fetchAnalytics(from?: string | null, to?: string | null): 
   if (to) params.set('to', to)
   const qs = params.toString() ? `?${params.toString()}` : ''
   const res = await fetch(`/api/analytics${qs}`, { cache: 'no-store' })
-  if (!res.ok) throw new Error(`Failed to fetch analytics: ${res.status}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body?.error ?? `HTTP ${res.status}`)
+  }
   return res.json()
 }
