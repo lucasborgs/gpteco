@@ -89,10 +89,6 @@ export default function PainelPage() {
   const metrics = [
     { label: 'Total de Pedidos', value: filteredAll.length },
     { label: 'Atendidos', value: filteredPedidos.length },
-    {
-      label: 'Taxa de Sucesso',
-      value: `${filteredAll.length ? Math.round((filteredPedidos.length / filteredAll.length) * 1000) / 10 : 0}%`,
-    },
     { label: 'Ouvintes', value: ouvintes.length },
     { label: 'Fãs Frequentes', value: ouvintes.filter(o => o.pedidos >= 2).length, hint: '2+ atendidos' },
   ]
@@ -142,7 +138,7 @@ export default function PainelPage() {
       </header>
 
       {/* Linha 1 — Totalizadores compactos */}
-      <div className="shrink-0 px-6 py-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="shrink-0 px-4 sm:px-6 py-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {loading
           ? [...Array(5)].map((_, i) => (
               <div key={i} className="h-[54px] bg-gray-200 rounded-lg animate-pulse" />

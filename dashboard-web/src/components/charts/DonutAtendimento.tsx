@@ -46,7 +46,7 @@ export function DonutAtendimento({ data, selectedMotivos, onMotivoClick, compact
   }
 
   const pie = compact
-    ? { h: 110, inner: 28, outer: 44 }
+    ? { h: 90, inner: 22, outer: 36 }
     : { h: 240, inner: 58, outer: 88 }
 
   const pieChart = (
@@ -109,13 +109,18 @@ export function DonutAtendimento({ data, selectedMotivos, onMotivoClick, compact
     </ul>
   )
 
+  const pct = `${data.taxa_sucesso_pct}%`
+
   if (compact) {
     return (
       <div className="flex flex-col items-center w-full gap-1">
-        <div className="w-[110px] shrink-0">
+        <div className="relative shrink-0" style={{ width: pie.h, height: pie.h }}>
           <ResponsiveContainer width="100%" height={pie.h}>
             {pieChart}
           </ResponsiveContainer>
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="text-[10px] font-bold text-content-primary leading-none">{pct}</span>
+          </div>
         </div>
         {legend}
       </div>
@@ -124,10 +129,13 @@ export function DonutAtendimento({ data, selectedMotivos, onMotivoClick, compact
 
   return (
     <div className="flex items-center justify-center gap-4 flex-wrap">
-      <div className="w-[200px]">
+      <div className="relative w-[200px]">
         <ResponsiveContainer width="100%" height={pie.h}>
           {pieChart}
         </ResponsiveContainer>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="text-xl font-bold text-content-primary">{pct}</span>
+        </div>
       </div>
       {legend}
     </div>
