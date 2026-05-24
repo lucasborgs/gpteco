@@ -208,7 +208,7 @@ export default function PainelPage() {
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-content-secondary mb-2 shrink-0">
                     Taxa de Atendimento
                   </h2>
-                  <div className="flex-1 min-h-0 flex items-center">
+                  <div className="flex-1 min-h-0 overflow-hidden flex items-center justify-center">
                     <DonutAtendimento
                       data={taxa}
                       selectedMotivos={selectedMotivos}
@@ -308,9 +308,10 @@ export default function PainelPage() {
         onClick={() => setChatOpen(false)}
       />
       <div
-        className={`fixed right-0 top-0 h-full w-[400px] bg-white border-l border-border shadow-2xl z-40 flex flex-col transition-transform duration-200 ${
+        className={`fixed right-0 top-0 w-full sm:w-[400px] bg-white border-l border-border shadow-2xl z-40 flex flex-col transition-transform duration-200 ${
           chatOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
+        style={{ height: '100dvh' }}
       >
         <InsightsPanel />
       </div>

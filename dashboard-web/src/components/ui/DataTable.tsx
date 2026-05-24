@@ -7,7 +7,8 @@ interface DataTableProps {
 
 export function DataTable({ headers, rows }: DataTableProps) {
   return (
-    <table className="w-full text-sm">
+    <div className="overflow-x-auto">
+    <table className="w-full text-sm min-w-[360px]">
       <thead className="bg-gray-50 border-b border-border">
         <tr>
           {headers.map((h, i) => (
@@ -35,5 +36,6 @@ export function DataTable({ headers, rows }: DataTableProps) {
         )}
       </tbody>
     </table>
+    </div>
   )
 }
