@@ -6,7 +6,14 @@ export const dynamic = 'force-dynamic'
 const DIAS = ['Segunda', 'Terca', 'Quarta', 'Quinta', 'Sexta', 'Sabado', 'Domingo']
 
 export async function GET(request: NextRequest) {
-  const client = await pool.connect()
+  let client
+  try {
+    client = await pool.connect()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[API] DB connect error:', msg)
+    return NextResponse.json({ error: `Falha na conexão com o banco: ${msg}` }, { status: 500 })
+  }
   try {
     // --- Filtro de data: from/to (ISO strings) ---
     const fromParam = request.nextUrl.searchParams.get('from')
@@ -255,6 +262,6 @@ export async function GET(request: NextRequest) {
     console.error('[API] Analytics error:', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   } finally {
-    client.release()
+    client?.release()
   }
 }
