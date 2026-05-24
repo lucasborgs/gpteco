@@ -45,73 +45,91 @@ export function DonutAtendimento({ data, selectedMotivos, onMotivoClick, compact
     onMotivoClick(next)
   }
 
-  const pieH = compact ? 160 : 240
-  const inner = compact ? 36 : 58
-  const outer = compact ? 56 : 88
+  const pie = compact
+    ? { h: 110, inner: 28, outer: 44 }
+    : { h: 240, inner: 58, outer: 88 }
+
+  const pieChart = (
+    <PieChart>
+      <Pie
+        data={chartData}
+        cx="50%"
+        cy="50%"
+        innerRadius={pie.inner}
+        outerRadius={pie.outer}
+        dataKey="value"
+        paddingAngle={2}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        onClick={(entry: any) => entry?.motivoKey && toggle(entry.motivoKey)}
+        style={{ cursor: onMotivoClick ? 'pointer' : undefined }}
+        isAnimationActive={false}
+      >
+        {chartData.map((entry, i) => {
+          const selected = selectedMotivos?.has(entry.motivoKey) ?? false
+          return (
+            <Cell
+              key={i}
+              fill={entry.color}
+              opacity={hasSelection && !selected ? 0.3 : 1}
+              stroke={selected ? '#111' : '#fff'}
+              strokeWidth={selected ? 2 : 1}
+            />
+          )
+        })}
+      </Pie>
+      <Tooltip
+        contentStyle={{ borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13 }}
+        formatter={(v: unknown, name: unknown) => [`${v as number} pedidos`, String(name ?? '')]}
+      />
+    </PieChart>
+  )
+
+  const legend = (
+    <ul className={compact ? 'space-y-0.5 text-xs w-full' : 'space-y-1.5 text-xs'}>
+      {chartData.map(entry => {
+        const selected = selectedMotivos?.has(entry.motivoKey) ?? false
+        return (
+          <li key={entry.motivoKey}>
+            <button
+              onClick={() => toggle(entry.motivoKey)}
+              disabled={!onMotivoClick}
+              className={`flex items-center gap-2 w-full text-left rounded px-1.5 py-0.5 transition-colors ${
+                onMotivoClick ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'
+              } ${selected ? 'bg-gray-100 font-semibold' : ''} ${
+                hasSelection && !selected ? 'opacity-50' : ''
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+              <span className="text-content-secondary truncate">{entry.name}</span>
+              <span className="font-data text-content-primary ml-auto pl-1 shrink-0">{entry.value}</span>
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+
+  if (compact) {
+    return (
+      <div className="flex flex-col items-center w-full gap-1">
+        <div className="w-[110px] shrink-0">
+          <ResponsiveContainer width="100%" height={pie.h}>
+            {pieChart}
+          </ResponsiveContainer>
+        </div>
+        {legend}
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-center justify-center gap-4 flex-wrap">
-      {/* Donut sem texto central */}
-      <div className={compact ? 'w-[140px]' : 'w-[200px]'}>
-        <ResponsiveContainer width="100%" height={pieH}>
-          <PieChart>
-            <Pie
-              data={chartData}
-              cx="50%"
-              cy="50%"
-              innerRadius={inner}
-              outerRadius={outer}
-              dataKey="value"
-              paddingAngle={2}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              onClick={(entry: any) => entry?.motivoKey && toggle(entry.motivoKey)}
-              style={{ cursor: onMotivoClick ? 'pointer' : undefined }}
-              isAnimationActive={false}
-            >
-              {chartData.map((entry, i) => {
-                const selected = selectedMotivos?.has(entry.motivoKey) ?? false
-                return (
-                  <Cell
-                    key={i}
-                    fill={entry.color}
-                    opacity={hasSelection && !selected ? 0.3 : 1}
-                    stroke={selected ? '#111' : '#fff'}
-                    strokeWidth={selected ? 2 : 1}
-                  />
-                )
-              })}
-            </Pie>
-            <Tooltip
-              contentStyle={{ borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13 }}
-              formatter={(v: unknown, name: unknown) => [`${v as number} pedidos`, String(name ?? '')]}
-            />
-          </PieChart>
+      <div className="w-[200px]">
+        <ResponsiveContainer width="100%" height={pie.h}>
+          {pieChart}
         </ResponsiveContainer>
       </div>
-
-      {/* Legenda interativa */}
-      <ul className="space-y-1.5 text-xs">
-        {chartData.map(entry => {
-          const selected = selectedMotivos?.has(entry.motivoKey) ?? false
-          return (
-            <li key={entry.motivoKey}>
-              <button
-                onClick={() => toggle(entry.motivoKey)}
-                disabled={!onMotivoClick}
-                className={`flex items-center gap-2 w-full text-left rounded px-1.5 py-0.5 transition-colors ${
-                  onMotivoClick ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'
-                } ${selected ? 'bg-gray-100 font-semibold' : ''} ${
-                  hasSelection && !selected ? 'opacity-50' : ''
-                }`}
-              >
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
-                <span className="text-content-secondary">{entry.name}</span>
-                <span className="font-data text-content-primary ml-auto pl-2">{entry.value}</span>
-              </button>
-            </li>
-          )
-        })}
-      </ul>
+      {legend}
     </div>
   )
 }
