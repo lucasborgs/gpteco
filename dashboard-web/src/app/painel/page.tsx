@@ -101,32 +101,44 @@ export default function PainelPage() {
     <div className="flex flex-col bg-app-bg" style={{ minHeight: '100dvh' }}>
 
       {/* Header */}
-      <header className="h-14 shrink-0 bg-white border-b border-border flex items-center justify-between px-6 gap-3">
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
-            <span className="text-white font-heading font-bold text-xs">R</span>
+      <header className="shrink-0 bg-white border-b border-border">
+        {/* Linha principal: logo + botões */}
+        <div className="flex items-center justify-between px-4 sm:px-6 h-12 sm:h-14 gap-3">
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
+              <span className="text-white font-heading font-bold text-xs">R</span>
+            </div>
+            <span className="font-heading font-bold text-content-primary text-base">Rádio FM</span>
           </div>
-          <span className="font-heading font-bold text-content-primary text-base">Rádio FM</span>
+          <div className="flex items-center gap-2">
+            {/* DateFilter visível só em sm+ */}
+            <div className="hidden sm:flex items-center gap-2">
+              <DateFilter from={from} to={to} onChange={setDateRange} />
+            </div>
+            <button
+              onClick={reload}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors"
+            >
+              Atualizar
+            </button>
+            <button
+              onClick={() => setChatOpen(o => !o)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                chatOpen
+                  ? 'bg-primary text-white border-primary'
+                  : 'border-border text-content-secondary hover:bg-gray-50 hover:text-content-primary'
+              }`}
+            >
+              ✦ IA
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <DateFilter from={from} to={to} onChange={setDateRange} />
-          <button
-            onClick={reload}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors shrink-0"
-          >
-            Atualizar
-          </button>
-          <button
-            onClick={() => setChatOpen(o => !o)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors shrink-0 ${
-              chatOpen
-                ? 'bg-primary text-white border-primary'
-                : 'border-border text-content-secondary hover:bg-gray-50 hover:text-content-primary'
-            }`}
-          >
-            ✦ IA
-          </button>
-        </div>
+        {/* Filtro de data compacto — só em mobile */}
+        {(!(!from && !to)) && (
+          <div className="sm:hidden px-4 pb-2">
+            <DateFilter from={from} to={to} onChange={setDateRange} compact />
+          </div>
+        )}
       </header>
 
       {/* Linha 1 — Totalizadores compactos */}
