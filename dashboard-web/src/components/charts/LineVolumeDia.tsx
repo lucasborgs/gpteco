@@ -7,7 +7,7 @@ interface Props {
   data: VolumeDiaMes[]
   selectedDates?: Set<string>
   onSelectionChange?: (dates: Set<string>) => void
-  height?: number | string
+  height?: number | `${number}%`
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
