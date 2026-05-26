@@ -1,117 +1,214 @@
-# Agente Virtual Musical
+# Virtual Music Agent
 
-> Ouvintes pedem músicas pelo WhatsApp. O agente faz a curadoria de acordo com o perfil da rádio e toca automaticamente.
+> Listeners request songs over WhatsApp. The agent curates each request against the radio station's profile and plays it automatically — end to end, with no human in the loop.
 
----
+This is a production system built for **Luz FM**, a Brazilian FM station focused on the 30+ "flashback" audience. It is published here as a portfolio piece.
 
-## Situação
-
-Uma rádio FM com foco no público 30+ recebia dezenas de pedidos musicais por dia via WhatsApp — mensagens de voz e texto chegando de forma desordenada, sem triagem, sem automação.
-
-O processo era 100% manual: o locutor ouvia cada áudio, identificava a música, buscava no acervo, e ainda precisava responder ao ouvinte. Nos horários de pico, pedidos se perdiam. A experiência do ouvinte era inconsistente.
+> **Note on language:** the code, comments and documentation are in English. Listener-facing messages and the LLM prompts are intentionally kept in **Brazilian Portuguese** — they are tuned for a PT-BR audience and for the phonetic normalization the classifier relies on, so translating them would change the product's behavior.
 
 ---
 
-## Tarefa
+## Overview
 
-Construir um agente de IA que fechasse o ciclo completo de ponta a ponta:
+A radio station was receiving dozens of song requests per day over WhatsApp — voice notes and text, arriving unsorted, with no triage and no automation. The whole process was manual: a host listened to each audio, identified the song, searched the library, and replied to the listener. At peak hours requests were lost.
 
-- Receber pedidos via WhatsApp (voz ou texto)
-- Entender o que o ouvinte quer, mesmo com sotaque e ruído de fundo
-- Validar se o pedido está dentro do repertório da rádio (flashback 30+)
-- Buscar ou baixar a música automaticamente
-- Mixar a voz do ouvinte com a música pedida, com transição suave
-- Entregar o arquivo diretamente na fila do software de transmissão
-- Responder ao ouvinte com confirmação em tempo real
+This agent closes the full loop automatically:
 
-Tudo isso sem intervenção humana.
+- Receive requests over WhatsApp (voice or text)
+- Understand what the listener wants, even with accents and background noise
+- Validate the request against the station's repertoire (30+ flashback)
+- Find the song in the local library or download it on demand
+- Mix the listener's voice with the requested song using a smooth transition
+- Deliver the file straight to the broadcast software's queue
+- Reply to the listener with a real-time confirmation
+
+It also ships with a **web analytics dashboard** (Next.js) for the station owner, including cross-filtering charts and an AI insights panel.
 
 ---
 
-## Ação
+## Architecture
 
-### Pipeline de 7 Etapas
+### Request pipeline (7 steps)
 
 ```mermaid
 flowchart TD
-    A([WhatsApp Ouvinte]) -->|voz .ogg ou texto| B[WAHA/WhatsApp API]
-    B -->|webhook POST| C[FastAPI]
+    A([WhatsApp listener]) -->|voice .ogg or text| B[WAHA / WhatsApp HTTP API]
+    B -->|webhook POST| C[FastAPI server]
 
-    C --> D{Tipo?}
-    D -->|audio| E["Whisper - transcricao"]
-    D -->|texto| F[Bypass STT]
+    C --> D{Type?}
+    D -->|audio| E["Whisper via Groq API - transcription"]
+    D -->|text| F[Skip STT]
 
-    G["LLM - OpenAI / Gemini - Extracao de metadados"]
+    G["LLM - OpenAI / Groq - metadata extraction + validation"]
     E --> G
     F --> G
-    G --> H{Validacoes}
-    H -->|nao e pedido musical| Z1([Sem resposta])
-    H -->|inapropriado| Z2([Resposta automatica])
-    H -->|nao e flashback| Z3([Sugestao de repertorio])
-    H -->|aprovado| I
+    G --> H{Validations}
+    H -->|not a song request| Z1([Menu / no-op])
+    H -->|inappropriate| Z2([Automatic reply])
+    H -->|out of repertoire| Z3([Repertoire suggestion])
+    H -->|approved| I
 
-    I[Busca no acervo local]
-    I -->|ja existe| J
-    I -->|nao existe| K[Download YouTube]
-    K -->|ffmpeg: normalizacao e corte de silencio| J
+    I[Local library lookup]
+    I -->|already cached| J
+    I -->|missing| K[YouTube download]
+    K -->|ffmpeg: loudnorm + silence trim| J
 
-    J{Entrada de voz?}
-    J -->|sim| L["pydub Mixer - overlay + fade_in"]
-    J -->|nao| M
+    J{Voice input?}
+    J -->|yes| L["pydub mixer - overlay + fade-in"]
+    J -->|no| M
 
-    L --> M["fila_zara - ZaraRadio toca automaticamente"]
-    M --> N[Registra pedido]
-    N --> O([WhatsApp - confirmacao ao ouvinte])
-
-    style A fill:#25D366,color:#fff
-    style B fill:#128C7E,color:#fff
-    style C fill:#009688,color:#fff
-    style G fill:#4A90D9,color:#fff
-    style K fill:#FF6B35,color:#fff
-    style L fill:#7B68EE,color:#fff
-    style M fill:#2E86AB,color:#fff
-    style O fill:#25D366,color:#fff
+    L --> M["queue → ZaraRadio plays it automatically"]
+    M --> N[Record request]
+    N --> O([WhatsApp - confirmation to listener])
 ```
 
----
+1. **STT** ([core/stt.py](core/stt.py)) — transcribes the `.ogg` voice note via the **Groq Whisper API** (no local model).
+2. **LLM** ([core/intelligence.py](core/intelligence.py)) — extracts artist/song and applies business rules (is it a request? is it in repertoire? is it appropriate?). The provider is OpenAI or Groq, selected automatically from the configured keys. Prompt lives in [core/config_radio.py](core/config_radio.py).
+3. **Library** ([core/database.py](core/database.py)) — looks the song up in PostgreSQL with accent/case-insensitive matching.
+4. **Download** ([core/downloader.py](core/downloader.py)) — if missing, downloads from YouTube via `yt-dlp` and normalizes with `ffmpeg` (loudnorm to -14 LUFS, silence trim).
+5. **Mixer** ([core/audio_mixer.py](core/audio_mixer.py)) — overlays the listener's voice over the song with a smooth fade (`pydub`).
+6. **Delivery** ([core/queue_watcher.py](core/queue_watcher.py)) — an external FIFO queue feeds ZaraRadio one file at a time and detects playback end (CurrentSong.txt + timer).
+7. **Record** — saves the request for the 6-hour per-listener cooldown and for analytics.
 
-## Resultados
-
-- Pipeline end-to-end validado: voz do ouvinte → pedido identificado → musica baixada → mixagem → fila do ZaraRadio, sem intervencao humana
-- Tempo medio por pedido de texto: **~15–30s** (sem download) / **~60–90s** (com download do YouTube)
-- Acervo com cache local: downloads futuros da mesma musica sao instantaneos
-- Resposta automatica ao ouvinte com confirmacao ou motivo de recusa
-- Sistema containerizado: `docker compose up -d` e esta pronto
+Around the pipeline, [server.py](server.py) runs the FastAPI webhook, a per-listener conversation state machine, health checks, a weekly report, and automatic WAHA session reconnection.
 
 ---
 
 ## Stack
 
+**Backend**
+
 ```
-Python 3.12       FastAPI          pydub
-Whisper (local)   yt-dlp           ffmpeg
-PostgreSQL        OpenAI / Gemini  WAHA (Baileys)
-Docker Compose    ZaraRadio (FM)
+Python 3.13      FastAPI            pydub
+Whisper (Groq)   yt-dlp / ffmpeg    PostgreSQL (Supabase)
+OpenAI / Groq    WAHA (Baileys)     Docker Compose
+```
+
+**Dashboard** (`dashboard-web/`)
+
+```
+Next.js 14       TypeScript         Recharts
+React 18         pg (PostgreSQL)    Tailwind CSS
 ```
 
 ---
 
-## Estrutura do Projeto
+## Project structure
 
 ```
 gpteco/
 ├── core/
-│   ├── pipeline.py       # orquestrador principal (7 etapas)
-│   ├── stt.py            # transcricao Whisper local
-│   ├── intelligence.py   # LLM: extracao de metadados + validacoes
-│   ├── downloader.py     # yt-dlp + ffmpeg (loudnorm -14 LUFS)
-│   ├── audio_mixer.py    # pydub: overlay + fade_in
-│   ├── database.py       # DuckDB: acervo + pedidos + cooldown
-│   ├── queue_watcher.py  # fila FIFO para o ZaraRadio
-│   └── whatsapp.py       # cliente WAHA (download audio + envio)
-├── server.py             # FastAPI: webhook + background tasks
-├── main.py               # CLI entry point
-├── docker-compose.yml
+│   ├── pipeline.py        # main orchestrator (7 steps)
+│   ├── stt.py             # transcription via Groq Whisper API
+│   ├── intelligence.py    # LLM: metadata extraction + validations
+│   ├── config_radio.py    # station identity, listener messages, LLM prompt
+│   ├── downloader.py      # yt-dlp + ffmpeg (loudnorm -14 LUFS)
+│   ├── audio_mixer.py     # pydub: overlay + fade-in
+│   ├── database.py        # PostgreSQL: library + requests + cooldown
+│   ├── queue_watcher.py   # FIFO queue for ZaraRadio
+│   ├── curador.py         # music-trivia "pills" (optional follow-up message)
+│   ├── relatorio.py       # analytics + weekly report
+│   └── whatsapp.py        # WAHA client (download audio + send messages)
+├── server.py              # FastAPI: webhook + background tasks + health
+├── main.py                # CLI entry point (single request)
+├── scripts/               # one-off DB backfills (genre, phone resolution)
+├── dashboard-web/         # Next.js analytics dashboard
+├── docker-compose.yml         # local dev (builds the image)
+├── docker-compose.dist.yml    # client deployment (prebuilt image)
+├── instalar.bat           # Windows installer for client deployment
+├── Dockerfile
 ├── .env.example
 └── requirements.txt
 ```
+
+---
+
+## Installation & running
+
+### Prerequisites
+
+- Docker and Docker Compose (recommended path), **or** Python 3.13 + `ffmpeg` for local runs
+- A PostgreSQL database (the project uses [Supabase](https://supabase.com))
+- A [Groq](https://console.groq.com) API key (free) and/or an [OpenAI](https://platform.openai.com) API key
+
+### Backend (Docker — recommended)
+
+```bash
+# 1. Configure the environment
+cp .env.example .env
+#    then fill in: GROQ_API_KEY (or OPENAI_API_KEY), DATABASE_URL, WAHA_API_KEY, ...
+
+# 2. Start the stack (FastAPI server + WAHA + Uptime Kuma)
+docker compose up -d
+
+# 3. Connect WhatsApp: open the WAHA dashboard and scan the QR code
+#    http://localhost:3001/dashboard   (login: admin / WAHA_API_KEY)
+
+# Useful:
+docker compose logs -f servidor      # follow logs
+docker compose down                  # stop
+```
+
+Services after startup:
+
+| Service     | URL                                   | Purpose                          |
+|-------------|---------------------------------------|----------------------------------|
+| FastAPI     | http://localhost:8002/health          | webhook + health check           |
+| WAHA        | http://localhost:3001/dashboard       | WhatsApp gateway (QR / sessions) |
+| Uptime Kuma | http://localhost:3002                 | uptime monitoring                |
+
+> `docker-compose.dist.yml` is an alternative for client machines: it pulls a prebuilt image instead of building locally, and `instalar.bat` automates the whole setup on Windows.
+
+### Backend (local, without Docker)
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt          # ffmpeg must be installed and on PATH
+
+cp .env.example .env                      # fill in your keys
+uvicorn server:app --host 0.0.0.0 --port 8002
+```
+
+You can also process a single request from the command line:
+
+```bash
+python main.py --numero 5511999999999 --texto "Quero ouvir Evidências do Chitãozinho e Xororó"
+python main.py --numero 5511999999999 --ogg path/to/voice.ogg
+```
+
+### Dashboard (`dashboard-web/`)
+
+```bash
+cd dashboard-web
+npm install
+cp .env.local.example .env.local          # set DATABASE_URL (and OPENAI_API_KEY for AI insights)
+npm run dev                               # http://localhost:3000
+```
+
+The dashboard reads the same PostgreSQL database and renders request analytics (audience heatmap, top genres, fulfillment rate, daily volume) with cross-filtering and an optional AI insights panel.
+
+---
+
+## Results
+
+This system ran in production for a real FM station. Reported honestly:
+
+- **Full end-to-end automation validated in production:** listener voice → request identified → song downloaded → mixed → ZaraRadio queue, with no human intervention.
+- **Robust to noisy input:** the LLM normalizes phonetic errors from speech-to-text (e.g. "morder talk" → "Modern Talking") and asks for confirmation when unsure.
+- **Repertoire-aware:** requests are validated against the station's genre rules with a chain-of-thought step before the decision.
+- **Local caching:** once a song is downloaded and normalized, future requests for it are served instantly from the library.
+- **Operational resilience:** the queue watcher self-restarts via a watchdog, the WhatsApp session auto-reconnects, and `/health` reports WAHA, database, queue and disk status.
+- **Owner-facing analytics:** a weekly WhatsApp report plus a web dashboard with cross-filtering and AI-generated insights.
+
+### Limitations & honesty notes
+
+- **No benchmark numbers are claimed here.** Latency depends on whether the song is cached and on third-party APIs (Groq/OpenAI, YouTube), so I am not publishing timing figures I cannot reproduce from artifacts in this repo.
+- **No automated test suite.** There is a manual mixer test script ([test_mixer.py](test_mixer.py)); the rest was validated through real usage.
+- **External dependencies:** the system relies on WAHA (WhatsApp), Groq/OpenAI, a YouTube source for downloads, and a PostgreSQL instance.
+- **ZaraRadio integration is Windows/file-based:** delivery targets ZaraRadio through a watched folder and its `CurrentSong.txt`, which is specific to that broadcast software.
+
+---
+
+## License
+
+[MIT](LICENSE) © Lucas Borges
