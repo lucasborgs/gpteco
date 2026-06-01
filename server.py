@@ -53,7 +53,7 @@ from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from core import config_radio, curador, database, queue_watcher, relatorio, whatsapp
+from core import composer, config_radio, curador, database, queue_watcher, relatorio, whatsapp
 from core.pipeline import processar_pedido
 
 app = FastAPI(title="Agente Virtual Musical", version="1.0.0")
@@ -632,10 +632,13 @@ async def _aplicar_resultado_pipeline(
     # pedido musical — envia MSG_NAO_ID e renova o timer em vez de silêncio.
     if mostrar_menu and was_aguardando_pedido:
         await _ativar_aguardando_pedido(numero)
-        await asyncio.to_thread(
-            lambda: whatsapp.enviar_mensagem(numero, config_radio.MSG_NAO_ID)
+        msg_nao_id = await asyncio.to_thread(
+            lambda: composer.compor("nao_id", {}, texto_ouvinte)
         )
-        print(f"[ESTADO] {numero}: aguardando_pedido — enviando MSG_NAO_ID.")
+        await asyncio.to_thread(
+            lambda: whatsapp.enviar_mensagem(numero, msg_nao_id)
+        )
+        print(f"[ESTADO] {numero}: aguardando_pedido — enviando nao_id (composer).")
         return
 
     if mensagem:
