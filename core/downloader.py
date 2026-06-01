@@ -41,6 +41,11 @@ LUFS_TARGET: int = -14
 LUFS_TRUE_PEAK: float = -1.5
 LUFS_LRA: int = 11
 
+# Limites anti-OOM: evita baixar mixes/vídeos/lives longos que estouram a RAM na mixagem.
+MAX_DURACAO_S: int = 900                      # 15 min — acima disso não é a música pedida
+MAX_FILESIZE_BYTES: int = 30 * 1024 * 1024    # 30 MB — rede de segurança no próprio download
+SEARCH_N: int = 5                             # nº de resultados avaliados na busca
+
 
 def _sanitizar_nome(nome: str) -> str:
     """Remove caracteres inválidos para nomes de arquivo no Windows."""
@@ -49,13 +54,18 @@ def _sanitizar_nome(nome: str) -> str:
 
 def _baixar_youtube(query: str) -> str:
     """
-    Busca o primeiro resultado no YouTube e baixa o melhor áudio disponível.
+    Busca no YouTube e baixa o melhor áudio de um resultado com duração
+    plausível de música (<= MAX_DURACAO_S).
+
+    Resultados longos (mixes, vídeos, lives) são ignorados: além de não serem
+    a faixa pedida, o pydub carrega o áudio inteiro na RAM na mixagem e um
+    arquivo de horas estoura a memória do container (OOM).
 
     Retorna:
         str : caminho do arquivo baixado (extensão variável: webm, m4a, opus...).
 
     Raises:
-        RuntimeError : se nenhum resultado for encontrado ou o download falhar.
+        RuntimeError : se nenhum resultado adequado for encontrado ou o download falhar.
     """
     os.makedirs(TEMP_DIR, exist_ok=True)
 
@@ -65,29 +75,52 @@ def _baixar_youtube(query: str) -> str:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "socket_timeout": 30,   # segundos — evita hang indefinido
-        "nopart": True,         # evita .part → rename (falha em volumes Windows)
+        "socket_timeout": 30,                # segundos — evita hang indefinido
+        "nopart": True,                      # evita .part → rename (falha em volumes Windows)
+        "max_filesize": MAX_FILESIZE_BYTES,  # aborta o download se o arquivo passar do teto
     }
 
     print(f"[DOWNLOADER] Buscando no YouTube: '{query}'")
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(f"ytsearch1:{query}", download=True)
+        # Fase 1 — coleta metadados dos primeiros resultados SEM baixar.
+        busca = ydl.extract_info(f"ytsearch{SEARCH_N}:{query}", download=False)
+        entries = [e for e in ((busca or {}).get("entries") or []) if e]
 
-        if not info or not info.get("entries"):
+        if not entries:
             raise RuntimeError(f"Nenhum resultado encontrado no YouTube para: '{query}'")
 
-        video = info["entries"][0]
-        video_id = video["id"]
-        ext = video.get("ext", "webm")
-        titulo = video.get("title", query)
+        # Escolhe o primeiro resultado com duração plausível de música.
+        escolhido = next(
+            (e for e in entries if 0 < (e.get("duration") or 0) <= MAX_DURACAO_S),
+            None,
+        )
+        if escolhido is None:
+            duracoes = [e.get("duration") for e in entries]
+            raise RuntimeError(
+                f"Nenhum resultado com duração <= {MAX_DURACAO_S // 60} min para '{query}' "
+                f"(durações encontradas, em s: {duracoes})"
+            )
+
+        video_id = escolhido["id"]
+        duracao = int(escolhido.get("duration") or 0)
+
+        # Fase 2 — baixa apenas o resultado escolhido.
+        info = ydl.extract_info(
+            f"https://www.youtube.com/watch?v={video_id}", download=True
+        )
+        ext = info.get("ext", "webm")
+        titulo = info.get("title", query)
 
     path_baixado = os.path.join(TEMP_DIR, f"{video_id}.{ext}")
 
     if not os.path.isfile(path_baixado):
-        raise RuntimeError(f"Arquivo baixado não encontrado em: {path_baixado}")
+        # Cai aqui também quando o max_filesize aborta o download.
+        raise RuntimeError(
+            f"Arquivo baixado não encontrado (possível corte por tamanho): {path_baixado}"
+        )
 
-    print(f"[DOWNLOADER] Baixado: '{titulo}'")
+    print(f"[DOWNLOADER] Baixado: '{titulo}' ({duracao // 60}min{duracao % 60:02d}s)")
     return path_baixado
 
 

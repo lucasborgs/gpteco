@@ -31,6 +31,12 @@ JANELA_ENTRADA_MS: int = 3_000
 SAMPLE_RATE: int = 44100   # Hz
 CHANNELS: int = 2          # Estéreo
 
+# Teto de tamanho do arquivo de música aceito na mixagem.
+# pydub carrega o áudio inteiro (descomprimido) na RAM e cria cópias durante o
+# overlay/export; um arquivo longo (mix/vídeo de horas) estoura a memória (OOM).
+# 35 MB ≈ ~24 min a 192 kbps — cobre faixas longas legítimas e barra mixes/vídeos.
+MAX_MUSICA_BYTES: int = 35 * 1024 * 1024
+
 
 def _normalizar_voz(voz: AudioSegment, target_dbfs: float = VOZ_TARGET_DBFS) -> AudioSegment:
     """
@@ -70,6 +76,16 @@ def mixar(path_voz: str, path_musica: str, path_saida: str) -> str:
         raise FileNotFoundError(f"Arquivo de voz não encontrado: {path_voz}")
     if not os.path.isfile(path_musica):
         raise FileNotFoundError(f"Arquivo de música não encontrado: {path_musica}")
+
+    # --- Guarda anti-OOM: recusa arquivos grandes demais ANTES de carregar na RAM ---
+    tam_musica = os.path.getsize(path_musica)
+    if tam_musica > MAX_MUSICA_BYTES:
+        raise ValueError(
+            f"Música grande demais para mixar com segurança: "
+            f"{tam_musica / (1024 * 1024):.0f} MB "
+            f"(limite {MAX_MUSICA_BYTES // (1024 * 1024)} MB). "
+            f"Provavelmente é um mix/vídeo longo, não a faixa pedida: {path_musica}"
+        )
 
     os.makedirs(os.path.dirname(os.path.abspath(path_saida)), exist_ok=True)
 
