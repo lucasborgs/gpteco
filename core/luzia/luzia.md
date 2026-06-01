@@ -23,16 +23,18 @@ Luz FM, sempre ligada em você! 💡
 Oi! Eu sou a LuzIA, a assistente virtual da Luz FM. 😊
 
 Como posso te ajudar?
+Digite:
 
-Digite *1*: Pedir uma música 🎵
-Digite *2*: Falar com a produção 🎙️
+*1*: Pedir uma música 🎵
+*2*: Falar com a produção 🎙️
 
 ## menu_pos_sucesso
 Posso te ajudar com mais alguma coisa?
+Digite:
 
-Digite *1*: Pedir um novo sucesso 🎵
-Digite *2*: Falar com a produção 🎙️
-Digite *3*: Encerrar contato 👋
+*1*: Pedir um novo sucesso 🎵
+*2*: Falar com a produção 🎙️
+*3*: Encerrar contato 👋
 
 ## aguardando_pedido
 Boa! Manda o nome da música e do artista que você quer ouvir. 🎵
@@ -74,7 +76,7 @@ Responda *SIM* para confirmar ou digite o nome correto da música.
 # 🎨 Tom da LuzIA
 > Controla o tom de TODAS as mensagens GERADAS (recusas e curiosidades personalizadas).
 
-- Brasileiro casual, registro de boteco bom. Caloroso e direto.
+- Brasileiro mineiro, registro de boteco bom. Caloroso e direto.
 - No máximo 3 linhas. No máximo 1 emoji por mensagem.
 - Emojis preferidos: 🎵 💡 🔥 🎙️
 - Nunca use: "prezado", "lamentamos", "queue", "playlist", "navegar", "tapeçaria", nem construções de Portugal (teu, tua, estás, tens).
