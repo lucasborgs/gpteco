@@ -26,7 +26,7 @@ _OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 _USAR_GROQ: bool = bool(_GROQ_API_KEY) and not bool(_OPENAI_API_KEY)
 
 # Modelos padrão por provedor (sobrescrevível via LLM_MODEL no .env)
-_MODELO_PADRAO = "llama-3.3-70b-versatile" if _USAR_GROQ else "gpt-4o-mini"
+_MODELO_PADRAO = "llama-3.3-70b-versatile" if _USAR_GROQ else "gpt-4o"
 LLM_MODEL: str = os.getenv("LLM_MODEL", _MODELO_PADRAO)
 
 # Singleton: client criado uma única vez no import, reutiliza connection pool HTTP

@@ -31,7 +31,7 @@ load_dotenv()
 _OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 PILULAS_MODELO: str = os.getenv("PILULAS_MODELO", "gpt-4o")
 # Personalização contextual usa modelo barato (só acrescenta 1 frase de ponte).
-PILULAS_CONTEXTO_MODELO: str = os.getenv("PILULAS_CONTEXTO_MODELO", "gpt-4o-mini")
+PILULAS_CONTEXTO_MODELO: str = os.getenv("PILULAS_CONTEXTO_MODELO", "gpt-4o")
 
 # Cliente singleton — None se não houver chave da OpenAI configurada.
 _client: OpenAI | None = OpenAI(api_key=_OPENAI_API_KEY) if _OPENAI_API_KEY else None

@@ -12,7 +12,7 @@ texto fixo (canned) de luzia.md — ou seja, o pior caso é a experiência de ho
 
 Configuração (.env):
   COMPOSER_ENABLED : "true"/"false" (padrão true). Se false, sempre usa canned.
-  COMPOSER_MODELO  : modelo a usar (padrão: gpt-4o-mini, ou llama no Groq).
+  COMPOSER_MODELO  : modelo a usar (padrão: gpt-4o, ou llama no Groq).
   OPENAI_API_KEY / GROQ_API_KEY : seleção de provedor (OpenAI tem prioridade).
 """
 
@@ -35,7 +35,7 @@ _GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 _OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 _USAR_GROQ: bool = bool(_GROQ_API_KEY) and not bool(_OPENAI_API_KEY)
 
-_MODELO_PADRAO = "llama-3.3-70b-versatile" if _USAR_GROQ else "gpt-4o-mini"
+_MODELO_PADRAO = "llama-3.3-70b-versatile" if _USAR_GROQ else "gpt-4o"
 MODELO: str = os.getenv("COMPOSER_MODELO", _MODELO_PADRAO)
 
 if not _ENABLED:
