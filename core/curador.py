@@ -15,16 +15,23 @@ Variáveis de ambiente:
   PILULAS_MODELO   : modelo a usar (padrão: gpt-4o).
 """
 
+from __future__ import annotations
+
 import json
 import os
+import re
 
 from openai import OpenAI
 from dotenv import load_dotenv
+
+from core import luzia
 
 load_dotenv()
 
 _OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 PILULAS_MODELO: str = os.getenv("PILULAS_MODELO", "gpt-4o")
+# Personalização contextual usa modelo barato (só acrescenta 1 frase de ponte).
+PILULAS_CONTEXTO_MODELO: str = os.getenv("PILULAS_CONTEXTO_MODELO", "gpt-4o-mini")
 
 # Cliente singleton — None se não houver chave da OpenAI configurada.
 _client: OpenAI | None = OpenAI(api_key=_OPENAI_API_KEY) if _OPENAI_API_KEY else None
@@ -126,4 +133,72 @@ def gerar_pilula(artista: str, musica: str) -> str | None:
         return None
 
     print(f"[CURADOR] Pílula gerada ({len(texto)} chars).")
+    return texto
+
+
+# Pistas de contexto pessoal no pedido (lugar, ocasião, companhia, atividade).
+_CONTEXTO_RE = re.compile(
+    r"\b(churrasco|festa|anivers[áa]rio|casamento|viagem|viajando|estrada|praia|"
+    r"trabalho|trabalhando|servi[çc]o|fam[íi]lia|esposa|marido|namorad[oa]|"
+    r"filh[oa]s?|m[ãa]e|pai|amigos?|domingo|s[áa]bado|feriado|chuva|sol|caf[ée]|"
+    r"almo[çc]o|jantar|carro|dirigindo|casa|trânsito|transito)\b",
+    re.IGNORECASE,
+)
+
+
+def _tem_contexto(texto: str) -> bool:
+    """Vale tentar personalizar? Sim se a mensagem traz algo além do pedido cru."""
+    if not texto:
+        return False
+    if _CONTEXTO_RE.search(texto):
+        return True
+    if any(ord(c) > 9000 for c in texto):  # emoji
+        return True
+    return len(texto.split()) > 6
+
+
+def personalizar_pilula(pilula_base: str, texto_ouvinte: str) -> str:
+    """
+    Se o ouvinte trouxe contexto pessoal, acrescenta UMA frase de ponte ao final
+    da curiosidade. Caso contrário (ou em qualquer falha) devolve a base intacta.
+
+    Não afeta o cache: a curiosidade base continua sendo a mesma para todos; a
+    personalização é aplicada só no momento do envio.
+    """
+    if _client is None or not pilula_base:
+        return pilula_base
+    if not _tem_contexto(texto_ouvinte):
+        return pilula_base
+
+    try:
+        system = (
+            luzia.instrucao_curador_contexto()
+            + "\n\nDiretrizes de tom:\n"
+            + luzia.diretrizes_luzia()
+        )
+        user = (
+            f"Curiosidade: {pilula_base}\n\n"
+            f'Mensagem do ouvinte: "{texto_ouvinte}"\n\n'
+            "Devolva a curiosidade (com a ponte ao final, se couber). Sem aspas, sem rótulos."
+        )
+        response = _client.chat.completions.create(
+            model=PILULAS_CONTEXTO_MODELO,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.5,
+            max_tokens=220,
+        )
+    except Exception as e:
+        print(f"[CURADOR] Falha na personalização ({e}); usando pílula base.")
+        return pilula_base
+
+    texto = (response.choices[0].message.content or "").strip()
+    # Salvaguarda: resposta vazia, encolhida ou inflada demais → base.
+    if not texto or len(texto) < len(pilula_base) - 20 or len(texto) > len(pilula_base) + 240:
+        print("[CURADOR] Personalização fora do esperado; usando pílula base.")
+        return pilula_base
+
+    print(f"[CURADOR] Pílula personalizada (+{len(texto) - len(pilula_base)} chars).")
     return texto

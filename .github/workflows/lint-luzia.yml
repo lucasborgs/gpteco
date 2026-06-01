@@ -1,0 +1,22 @@
+name: Validar luzia.md
+
+# Protege a edição do prompt/mensagens da LuzIA pelo time da rádio:
+# qualquer PR que mexa em luzia.md (ou no loader) roda o validador.
+on:
+  pull_request:
+    paths:
+      - "core/luzia/**"
+  push:
+    paths:
+      - "core/luzia/**"
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Rodar validador de luzia.md
+        run: python -m core.luzia.schema

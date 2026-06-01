@@ -38,6 +38,7 @@ Iniciar em produção (Windows):
 
 import asyncio
 import os
+import re
 import shutil
 import time
 from collections import OrderedDict
@@ -605,7 +606,7 @@ async def _enviar_resposta_menu(numero: str, mensagem: str) -> None:
 
 
 async def _aplicar_resultado_pipeline(
-    numero: str, resultado: dict, was_aguardando_pedido: bool
+    numero: str, resultado: dict, was_aguardando_pedido: bool, texto_ouvinte: str = ""
 ) -> None:
     """
     Centraliza o envio da mensagem do pipeline e a transição de estado.
@@ -653,14 +654,14 @@ async def _aplicar_resultado_pipeline(
         artista = resultado.get("artista")
         musica = resultado.get("musica")
         if artista and musica:
-            asyncio.create_task(_enviar_pilula_bg(numero, artista, musica))
+            asyncio.create_task(_enviar_pilula_bg(numero, artista, musica, texto_ouvinte))
     elif mostrar_menu:
         await _ativar_aguardando_menu(numero)
     elif deve_aguardar_pedido or was_aguardando_pedido:
         await _ativar_aguardando_pedido(numero)
 
 
-async def _enviar_pilula_bg(numero: str, artista: str, musica: str) -> None:
+async def _enviar_pilula_bg(numero: str, artista: str, musica: str, texto_ouvinte: str = "") -> None:
     """
     Gera (ou busca em cache) e envia a pílula de curiosidade ao ouvinte.
 
@@ -707,7 +708,12 @@ async def _enviar_pilula_bg(numero: str, artista: str, musica: str) -> None:
         # 3. Aguarda alguns segundos para separar visualmente do MSG_SUCESSO
         await asyncio.sleep(_PILULA_DELAY_S)
 
-        # 4. Envia e registra
+        # 4. Personaliza com o contexto do ouvinte (se houver) — não altera o cache.
+        texto = await asyncio.to_thread(
+            lambda: curador.personalizar_pilula(texto, texto_ouvinte)
+        )
+
+        # 5. Envia e registra
         mensagem = f"{config_radio.MSG_PILULA_PREFIXO}{texto}"
         await asyncio.to_thread(
             lambda: whatsapp.enviar_mensagem(numero, mensagem)
@@ -765,7 +771,7 @@ async def _pipeline_texto(numero: str, texto: str) -> None:
                 lambda: processar_pedido(numero=numero, texto=texto, notificar=_notificar)
             )
 
-        await _aplicar_resultado_pipeline(numero, resultado, was_aguardando_pedido)
+        await _aplicar_resultado_pipeline(numero, resultado, was_aguardando_pedido, texto)
 
         await _resolver_telefone_bg(numero)
     finally:
@@ -790,7 +796,13 @@ async def _pipeline_audio(numero: str, msg: dict) -> None:
 
         # 2. Processa e responde.
         # Se pendente=True, o .ogg é mantido para ser usado na confirmação por texto.
+        # Captura a transcrição (notificada como 'Entendi: "..."') para personalizar a pílula.
+        _captura = {"texto": ""}
+
         def _notificar(msg: str) -> None:
+            m = re.match(r'Entendi: "(.*)"', msg, re.DOTALL)
+            if m:
+                _captura["texto"] = m.group(1)
             whatsapp.enviar_mensagem(numero, msg)
 
         resultado = {"pendente": False, "mensagem": None}
@@ -798,7 +810,7 @@ async def _pipeline_audio(numero: str, msg: dict) -> None:
             resultado = await asyncio.to_thread(
                 lambda: processar_pedido(numero=numero, path_ogg=path_ogg, notificar=_notificar)
             )
-            await _aplicar_resultado_pipeline(numero, resultado, was_aguardando_pedido)
+            await _aplicar_resultado_pipeline(numero, resultado, was_aguardando_pedido, _captura["texto"])
         finally:
             if not resultado.get("pendente") and os.path.isfile(path_ogg):
                 os.remove(path_ogg)

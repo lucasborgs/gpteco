@@ -33,7 +33,7 @@ import shutil
 import time
 from pathlib import Path
 
-from core import audio_mixer, config_radio, database, downloader, intelligence, queue_watcher, stt
+from core import audio_mixer, composer, config_radio, database, downloader, intelligence, queue_watcher, stt
 
 # Diretórios (configuráveis via .env)
 TEMP_DIR: str = os.getenv(
@@ -112,40 +112,38 @@ def processar_pedido(
 
         if not metadados.is_apropriado:
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="inapropriado", genero=metadados.genero)
-            return _resultado(False, None, config_radio.MSG_INAPROPRIADO)
+            msg = composer.compor("inapropriado", {"artista": metadados.artista, "musica": metadados.musica}, texto)
+            return _resultado(False, None, msg)
 
         # --- Rate limiting por número (após confirmar que é pedido musical) ---
         _log_etapa(0, "Verificação de cooldown")
         if not DISABLE_COOLDOWN and not database.verificar_cooldown(numero):
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="cooldown", genero=metadados.genero)
-            return _resultado(False, None, config_radio.MSG_COOLDOWN)
+            msg = composer.compor("cooldown", {"artista": metadados.artista, "musica": metadados.musica}, texto)
+            return _resultado(False, None, msg)
 
         # Baixa confiança na identificação (transcrição possivelmente corrompida).
         # No modo retry o ouvinte já digitou — não abre nova pendência.
         if not metadados.is_confiante and not _is_retry:
             if not metadados.musica or not metadados.artista:
                 database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado")
-                return _resultado(False, None, config_radio.MSG_NAO_ID, aguardando_pedido=True)
+                return _resultado(False, None, composer.compor("nao_id", {}, texto), aguardando_pedido=True)
             if path_ogg:
                 database.criar_pendencia(numero, path_ogg, metadados.artista, metadados.musica)
-                msg = config_radio.MSG_CONFIRMACAO.format(
-                    musica=metadados.musica, artista=metadados.artista
-                )
+                msg = composer.compor("confirmacao", {"musica": metadados.musica, "artista": metadados.artista}, texto)
                 return _resultado(False, None, msg, pendente=True)
             # Texto digitado com baixa confiança → pede confirmação (sem pendência de áudio)
             database.criar_pendencia(numero, "__texto__", metadados.artista, metadados.musica)
-            msg = config_radio.MSG_CONFIRMACAO.format(
-                musica=metadados.musica, artista=metadados.artista
-            )
+            msg = composer.compor("confirmacao", {"musica": metadados.musica, "artista": metadados.artista}, texto)
             return _resultado(False, None, msg, pendente=True)
 
         if not metadados.musica or not metadados.artista:
             database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado")
-            return _resultado(False, None, config_radio.MSG_NAO_ID, aguardando_pedido=True)
+            return _resultado(False, None, composer.compor("nao_id", {}, texto), aguardando_pedido=True)
 
         if not metadados.is_flashback:
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="nao_flashback", genero=metadados.genero)
-            msg = config_radio.MSG_NAO_REPERTORIO.format(musica=metadados.musica, artista=metadados.artista)
+            msg = composer.compor("nao_repertorio", {"musica": metadados.musica, "artista": metadados.artista, "genero": metadados.genero}, texto)
             return _resultado(False, None, msg, aguardando_pedido=True)
 
         # --- Etapa 3: Busca no Acervo Local ---
