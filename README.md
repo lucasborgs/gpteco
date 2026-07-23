@@ -4,7 +4,7 @@
 
 This is a production system built for **Luz FM**, a Brazilian FM station focused on the 30+ "flashback" audience. It is published here as a portfolio piece.
 
-> **Note on language:** the code, comments and documentation are in English. Listener-facing messages and the LLM prompts are intentionally kept in **Brazilian Portuguese** — they are tuned for a PT-BR audience and for the phonetic normalization the classifier relies on, so translating them would change the product's behavior.
+> **Note on language:** this README and the public technical documentation are written in English. Listener-facing messages, prompts, and parts of the domain implementation remain in **Brazilian Portuguese** because the system was built and tuned for a Brazilian radio station.
 
 ---
 
@@ -28,7 +28,16 @@ It also ships with a **web analytics dashboard** (Next.js) for the station owner
 
 ## Architecture
 
-### Request pipeline (7 steps)
+### Request pipeline
+
+![Virtual Music Agent request pipeline](docs/assets/gpteco-request-pipeline.svg)
+
+The architecture is organized into four layers: listener input, AI orchestration, audio automation, and radio-station outputs. Voice and text follow the same path after transcription, while rejected or ambiguous requests are handled as automatic WhatsApp responses without entering the audio-production stages.
+
+<details>
+<summary><strong>Detailed technical flow (7 steps)</strong></summary>
+
+<br>
 
 ```mermaid
 flowchart TD
@@ -61,6 +70,8 @@ flowchart TD
     M --> N[Record request]
     N --> O([WhatsApp - confirmation to listener])
 ```
+
+</details>
 
 1. **STT** ([core/stt.py](core/stt.py)) — transcribes the `.ogg` voice note via the **Groq Whisper API** (no local model).
 2. **LLM** ([core/intelligence.py](core/intelligence.py)) — extracts artist/song and applies business rules (is it a request? is it in repertoire? is it appropriate?). The provider is OpenAI or Groq, selected automatically from the configured keys. Prompt lives in [core/config_radio.py](core/config_radio.py).
