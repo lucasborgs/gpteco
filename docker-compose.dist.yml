@@ -2,7 +2,7 @@
 # Agente Virtual Musical — Distribuição (clientes)
 # ============================================================
 # Use este arquivo se você recebeu a solução pronta (sem código-fonte).
-# A imagem já vem pré-compilada do Docker Hub.
+# A imagem é escolhida por uma tag imutável de release candidata.
 #
 # WAHA     — WhatsApp HTTP API     (porta 3001)
 # servidor — FastAPI + pipeline    (porta 8002)
@@ -54,7 +54,7 @@ services:
 
   # --- Servidor Python (FastAPI + pipeline) ---
   servidor:
-    image: iamlucb/gpteco:latest   # imagem pré-compilada do Docker Hub
+    image: ${GPTECO_IMAGE:-iamlucb/gpteco:rc-conversational-20260814}
     container_name: servidor
     restart: unless-stopped
     init: true                     # evita processos zumbi (ffmpeg/yt-dlp)
@@ -73,6 +73,7 @@ services:
       TEMP_DIR: /app/workspace/temp
       # Pasta do CurrentSong.txt dentro do container (o host é montado via volume abaixo)
       CURRENT_SONG_DIR: /app/workspace/current_song
+      ASSISTANT_PROFILE_PATH: /app/config/assistente.md
 
     volumes:
       # Named volume — Docker gerencia internamente, sem caminho Windows
@@ -87,6 +88,11 @@ services:
       - type: bind
         source: ${CURRENT_SONG_DIR:-./workspace/current_song}
         target: /app/workspace/current_song
+      # Perfil editável do cliente, somente leitura dentro do contêiner.
+      - type: bind
+        source: ${ASSISTANT_PROFILE_FILE:-./core/luzia/luzia.md}
+        target: /app/config/assistente.md
+        read_only: true
 
     depends_on:
       - waha

@@ -55,8 +55,14 @@ from fastapi.responses import JSONResponse
 
 from core import composer, config_radio, curador, database, queue_watcher, relatorio, whatsapp
 from core.pipeline import processar_pedido
+from core.conversation import ConversationSelector, MessageReceived
 
 app = FastAPI(title="Agente Virtual Musical", version="1.0.0")
+
+# Costura experimental única. Em legacy, nenhum orquestrador/perfil externo é
+# criado; o webhook segue exatamente pelos estados e pipeline existentes.
+CONVERSATION_SELECTOR = ConversationSelector.from_environment()
+_conversational_orchestrator = None
 
 app.add_middleware(
     CORSMiddleware,
@@ -530,6 +536,13 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     if "@g.us" in from_jid:
         return JSONResponse({"status": "ignored"})
 
+    # --- Costura experimental: antes de estados legados, mídia ou transcrição ---
+    if CONVERSATION_SELECTOR.uses_conversation(numero):
+        if not await _reservar_numero(numero):
+            return JSONResponse({"status": "already_processing"})
+        background_tasks.add_task(_processar_conversacional, numero, msg)
+        return JSONResponse({"status": "received", "mode": "conversation"})
+
     # --- Modo produção: bloqueia processamento, renova timer, sem chamar LLM ---
     if await _esta_em_producao(numero):
         await _renovar_timer_producao(numero)
@@ -598,6 +611,50 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         background_tasks.add_task(_pipeline_texto, numero, texto)
 
     return JSONResponse({"status": "received"})
+
+
+def _get_conversational_orchestrator():
+    """Inicialização preguiçosa: legacy não depende de perfil nem de Router."""
+    global _conversational_orchestrator
+    if _conversational_orchestrator is None:
+        from core.conversation import ConversationOrchestrator
+
+        _conversational_orchestrator = ConversationOrchestrator.from_environment()
+    return _conversational_orchestrator
+
+
+async def _processar_conversacional(numero: str, msg: dict) -> None:
+    try:
+        media = msg.get("media") or {}
+        is_audio = bool(msg.get("hasMedia")) and str(media.get("mimetype", "")).startswith("audio/")
+        received = MessageReceived(
+            jid=numero,
+            message_id=str(msg.get("id", "")),
+            text=(msg.get("body") or "").strip(),
+            is_audio=is_audio,
+            raw_payload=msg,
+            received_at=time.time(),
+        )
+        result = await _get_conversational_orchestrator().processar(received)
+        if not result.silent:
+            for reply in result.replies:
+                if reply:
+                    await asyncio.to_thread(lambda r=reply: whatsapp.enviar_mensagem(numero, r))
+    except Exception as exc:
+        # O transporte nunca expõe detalhes técnicos; a sessão permanece
+        # isolada e uma falha inesperada recebe o fallback fixo.
+        print(f"[CONVERSATION] Falha ao processar {numero}: {exc}")
+        try:
+            await asyncio.to_thread(
+                lambda: whatsapp.enviar_mensagem(
+                    numero,
+                    "Ô, parece que alguma coisa saiu do ritmo por aqui. Tenta de novo daqui a pouquinho?",
+                )
+            )
+        except Exception:
+            pass
+    finally:
+        await _liberar_numero(numero)
 
 
 async def _enviar_resposta_menu(numero: str, mensagem: str) -> None:

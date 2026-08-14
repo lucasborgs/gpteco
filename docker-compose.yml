@@ -72,6 +72,7 @@ services:
       # CURRENT_SONG_DIR do .env é o path Windows (usado como volume source acima).
       # O container precisa ver o path interno fixo onde o volume foi montado.
       CURRENT_SONG_DIR: /app/workspace/current_song
+      ASSISTANT_PROFILE_PATH: /app/config/assistente.md
 
     volumes:
       # Código-fonte — bind mount: mudanças em .py requerem apenas restart
@@ -86,6 +87,7 @@ services:
       - ${DATA_DIR:-./data}:/app/data
       # Pasta onde o ZaraRadio grava CurrentSong.txt (ex: C:\Users\user)
       - ${CURRENT_SONG_DIR:-./workspace/current_song}:/app/workspace/current_song
+      - ${ASSISTANT_PROFILE_FILE:-./core/luzia/luzia.md}:/app/config/assistente.md:ro
 
     depends_on:
       - waha

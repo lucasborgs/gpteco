@@ -29,6 +29,10 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # --- Código da aplicação ---
 COPY . .
 
+# Perfil editável: a distribuição pode sobrepor este arquivo com um bind mount
+# somente leitura sem exigir rebuild da imagem.
+RUN mkdir -p /app/config && cp core/luzia/luzia.md /app/config/assistente.md
+
 # --- Diretórios de trabalho (fallback; em produção são montados como volumes) ---
 RUN mkdir -p workspace/musicas/acervo_limpo workspace/musicas/fila_zara workspace/temp
 

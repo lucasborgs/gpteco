@@ -83,6 +83,26 @@ flowchart TD
 
 Around the pipeline, [server.py](server.py) runs the FastAPI webhook, a per-listener conversation state machine, health checks, a weekly report, and automatic WAHA session reconnection.
 
+### Experimental conversational layer
+
+The conversational layer is isolated behind one webhook seam and reuses the
+same musical pipeline only after explicit confirmation. It is selected with
+`CONVERSATION_MODE`:
+
+- `legacy` (default): the current flow is used for everyone;
+- `allowlist`: only JIDs in `CONVERSATION_ALLOWED_JIDS` use the experiment;
+- `all`: every JID uses it.
+
+Invalid or missing configuration safely falls back to `legacy`. The allowlist
+uses comma-separated JIDs such as `5511999999999@c.us,12345@lid`. Sessions are
+in memory with a 15-minute TTL and one worker is required. `ASSISTANT_PROFILE_PATH`
+can point to an external, read-only Markdown profile; otherwise the packaged
+profile is used and invalid edits retain the last valid version.
+
+The experimental layer adds one Router call per ordinary conversational turn,
+while deterministic production, confirmation and cancellation paths use no LLM
+call. A curiosity is optional and may add one best-effort call after success.
+
 ---
 
 ## Stack
