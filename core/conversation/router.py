@@ -40,8 +40,9 @@ class StructuredRouter:
     ferramenta: dados externos só são usados depois de validação determinística.
     """
 
-    def __init__(self, llm: Any = None, *, allowed_topics: str = "") -> None:
+    def __init__(self, llm: Any = None, *, unavailable: bool = False, allowed_topics: str = "") -> None:
         self.llm = llm
+        self.unavailable = unavailable
         self.allowed_topics = allowed_topics
 
     async def route(self, text: str, *, context: list[str] = ()) -> RouterDecision:
@@ -49,6 +50,8 @@ class StructuredRouter:
         # Produção, ofensa e saudações simples não precisam de LLM.
         if decision is not None:
             return decision
+        if self.unavailable:
+            return RouterDecision(Intent.UNCLEAR, failure_code="llm_unavailable")
         if self.llm is not None:
             try:
                 raw = await self._call_llm(text, context)
@@ -132,7 +135,7 @@ def build_default_router() -> StructuredRouter:
     """Constrói o Router apenas quando o experimento é realmente usado."""
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GROQ_API_KEY")
     if not api_key:
-        return StructuredRouter()
+        return StructuredRouter(unavailable=True)
     try:
         from openai import OpenAI
         from core import luzia
@@ -157,4 +160,4 @@ def build_default_router() -> StructuredRouter:
 
         return StructuredRouter(call)
     except Exception:
-        return StructuredRouter()
+        return StructuredRouter(unavailable=True)

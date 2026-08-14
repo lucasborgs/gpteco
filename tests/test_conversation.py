@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import threading
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from core.conversation import (
 )
 from core.conversation.contracts import ExecutorResult, PendingRequest
 from core.conversation.executor import ConfirmedPipelineExecutor
-from core.conversation.router import StructuredRouter
+from core.conversation.router import StructuredRouter, build_default_router
 
 
 class FakeClock:
@@ -220,6 +221,40 @@ def test_question_and_request_is_replied_before_confirmation_and_complaint_wins(
     assert complaint.replies
 
 
+def test_langgraph_runs_request_phases_before_creating_pending_request():
+    events: list[str] = []
+
+    class TracingOrchestrator(ConversationOrchestrator):
+        async def graph_load_session(self, state):
+            events.append("load_session")
+            return await super().graph_load_session(state)
+
+        async def graph_normalize(self, state):
+            events.append("normalize")
+            return await super().graph_normalize(state)
+
+        async def graph_route(self, state):
+            events.append("route")
+            return await super().graph_route(state)
+
+        async def graph_request(self, state):
+            events.append("request")
+            return await super().graph_request(state)
+
+    router = FakeRouter(RouterDecision(Intent.MUSIC_REQUEST, artist="A", music="M", genre="rock"))
+    orchestrator = TracingOrchestrator(
+        router=router,
+        executor=FakeExecutor(),
+        session_store=InMemorySessionStore(clock=FakeClock()),
+        cooldown_checker=lambda _: True,
+        media_downloader=lambda _: None,
+        transcriber=lambda _: "",
+    )
+    result = asyncio.run(orchestrator.processar(MessageReceived(jid="j", text="toca")))
+    assert result.state is ConversationState.AWAITING_CONFIRMATION
+    assert events == ["load_session", "normalize", "route", "request"]
+
+
 def test_llm_repertoire_flag_cannot_authorize_forbidden_request():
     async def llm(_payload):
         return {
@@ -260,6 +295,21 @@ def test_llm_unavailable_uses_profile_fallback_but_unclear_keeps_clarification()
     assert "saiu do ritmo" in unavailable_result.replies[0]
     assert len(llm_calls) == 1
     assert ambiguous_result.replies == ["Qual música você quer?"]
+
+
+def test_default_router_without_credentials_reports_llm_unavailable(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    decision = asyncio.run(build_default_router().route("me conta algo sobre música"))
+    assert decision.failure_code == "llm_unavailable"
+
+
+def test_default_router_initialization_failure_reports_llm_unavailable(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setitem(sys.modules, "openai", None)
+    decision = asyncio.run(build_default_router().route("me conta algo sobre música"))
+    assert decision.failure_code == "llm_unavailable"
 
 
 def test_external_profile_cannot_replace_protected_router_rules(tmp_path: Path, monkeypatch):

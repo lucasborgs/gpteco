@@ -8,7 +8,7 @@ import os
 import re
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from core import config_radio
 
@@ -23,7 +23,7 @@ from .contracts import (
 )
 from .router import Router, build_default_router
 from .session import InMemorySessionStore
-from .graph import build_conversation_graph
+from .graph import ConversationGraphState, build_conversation_graph
 from .executor import ConfirmedRequestExecutor
 from .repertoire import DeterministicRepertoireChecker
 
@@ -70,7 +70,7 @@ class ConversationOrchestrator:
         self.clock = clock
         self.production_timeout_seconds = production_timeout_seconds or float(os.getenv("CONVERSATION_PRODUCTION_TIMEOUT_MIN", "5")) * 60
         self._locks: dict[str, asyncio.Lock] = {}
-        self.graph = build_conversation_graph(self._processar_serial)
+        self.graph = build_conversation_graph(self)
 
     @classmethod
     def from_environment(cls) -> "ConversationOrchestrator":
@@ -91,69 +91,124 @@ class ConversationOrchestrator:
             output = await self.graph.ainvoke({"message": mensagem_recebida})
             return output["result"]
 
-    async def _processar_serial(self, message: MessageReceived) -> ConversationResult:
+    async def graph_load_session(self, state: ConversationGraphState) -> dict[str, Any]:
+        message: MessageReceived = state["message"]
         session = self.sessions.get_or_create(message.jid)
         # A própria busca já remove sessão expirada; a expiração também remove .ogg.
         self.sessions.touch(session, message.text)
+        return {"session": session}
 
-        if self.sessions.production_active(session):
-            # fromMe já é filtrado pelo webhook; portanto qualquer mensagem aqui
-            # é do ouvinte e renova o timeout móvel, sem resposta.
-            self.sessions.renew_production(session, self.production_timeout_seconds)
-            return ConversationResult(silent=True, state=ConversationState.PRODUCTION)
+    def graph_production_active(self, state: ConversationGraphState) -> bool:
+        return self.sessions.production_active(state["session"])
 
-        text, audio_path = await self._normalize_input(message)
+    async def graph_silence_production(self, state: ConversationGraphState) -> dict[str, Any]:
+        # Qualquer mensagem do ouvinte renova a janela sem acionar mídia/LLM.
+        session = state["session"]
+        self.sessions.renew_production(session, self.production_timeout_seconds)
+        return {"result": ConversationResult(silent=True, state=ConversationState.PRODUCTION)}
+
+    async def graph_normalize(self, state: ConversationGraphState) -> dict[str, Any]:
+        text, audio_path = await self._normalize_input(state["message"])
+        return {"text": text, "audio_path": audio_path}
+
+    def graph_input_transition(
+        self, state: ConversationGraphState,
+    ) -> Literal["audio_unintelligible", "confirm", "cancel", "collect", "route"]:
+        message: MessageReceived = state["message"]
+        text = state["text"].strip()
         if message.is_audio and not text:
-            self.sessions.clear_pending(session)
-            session.mode = ConversationState.CONVERSING
-            return ConversationResult(
-                replies=["Não consegui entender o áudio. Pode mandar outro ou escrever o nome da música?"],
-                state=session.mode,
-            )
-
-        # Confirmação e cancelamento são determinísticos e não consomem LLM.
-        pending = session.pending_request
+            return "audio_unintelligible"
+        pending = state["session"].pending_request
         if pending and _YES.fullmatch(text.strip()):
-            return await self._confirm(session, pending)
+            return "confirm"
         if pending and _NO.fullmatch(text.strip()):
-            self.sessions.clear_pending(session)
-            session.mode = ConversationState.CONVERSING
-            return ConversationResult(replies=["Tudo bem, cancelei esse pedido. Se quiser, pode me mandar outra música."], state=session.mode)
+            return "cancel"
         if not pending and _YES.fullmatch(text.strip()):
-            session.mode = ConversationState.COLLECTING_REQUEST
-            return ConversationResult(replies=["Me manda o nome da música e do artista que você quer ouvir."], state=session.mode)
+            return "collect"
+        return "route"
 
-        decision = await self.router.route(text, context=session.recent_messages[-10:])
+    async def graph_audio_unintelligible(self, state: ConversationGraphState) -> dict[str, Any]:
+        session = state["session"]
+        self.sessions.clear_pending(session)
+        session.mode = ConversationState.CONVERSING
+        return {"result": ConversationResult(
+            replies=["Não consegui entender o áudio. Pode mandar outro ou escrever o nome da música?"],
+            state=session.mode,
+        )}
+
+    async def graph_confirm(self, state: ConversationGraphState) -> dict[str, Any]:
+        pending = state["session"].pending_request
+        assert pending is not None
+        return {"result": await self._confirm(state["session"], pending)}
+
+    async def graph_cancel(self, state: ConversationGraphState) -> dict[str, Any]:
+        session = state["session"]
+        self.sessions.clear_pending(session)
+        session.mode = ConversationState.CONVERSING
+        return {"result": ConversationResult(
+            replies=["Tudo bem, cancelei esse pedido. Se quiser, pode me mandar outra música."], state=session.mode,
+        )}
+
+    async def graph_collect(self, state: ConversationGraphState) -> dict[str, Any]:
+        session = state["session"]
+        session.mode = ConversationState.COLLECTING_REQUEST
+        return {"result": ConversationResult(
+            replies=["Me manda o nome da música e do artista que você quer ouvir."], state=session.mode,
+        )}
+
+    async def graph_route(self, state: ConversationGraphState) -> dict[str, Any]:
+        session = state["session"]
+        decision = await self.router.route(state["text"], context=session.recent_messages[-10:])
+        return {"decision": decision}
+
+    def graph_route_transition(
+        self, state: ConversationGraphState,
+    ) -> Literal["llm_unavailable", "production", "request", "conversation"]:
+        decision: RouterDecision = state["decision"]
         if decision.failure_code == "llm_unavailable":
-            session.mode = ConversationState.CONVERSING
-            return ConversationResult(replies=[self._fixed("llm_unavailable")], state=session.mode)
+            return "llm_unavailable"
         if decision.intent in (Intent.PRODUCTION, Intent.COMPLAINT, Intent.REPORT, Intent.PROMOTION):
-            self.sessions.activate_production(session, self.production_timeout_seconds)
-            return ConversationResult(replies=[self._fixed("production")], state=ConversationState.PRODUCTION)
+            return "production"
+        if decision.intent in (Intent.MUSIC_REQUEST, Intent.MUSIC_QUESTION_AND_REQUEST):
+            return "request"
+        return "conversation"
+
+    async def graph_llm_unavailable(self, state: ConversationGraphState) -> dict[str, Any]:
+        session = state["session"]
+        session.mode = ConversationState.CONVERSING
+        return {"result": ConversationResult(replies=[self._fixed("llm_unavailable")], state=session.mode)}
+
+    async def graph_enter_production(self, state: ConversationGraphState) -> dict[str, Any]:
+        session = state["session"]
+        self.sessions.activate_production(session, self.production_timeout_seconds)
+        return {"result": ConversationResult(replies=[self._fixed("production")], state=ConversationState.PRODUCTION)}
+
+    async def graph_request(self, state: ConversationGraphState) -> dict[str, Any]:
+        decision: RouterDecision = state["decision"]
+        result = await self._handle_request(
+            state["session"], state["message"], state["text"], state.get("audio_path"), decision,
+        )
+        if decision.intent is Intent.MUSIC_QUESTION_AND_REQUEST and decision.answer:
+            result.replies.insert(0, decision.answer)
+        return {"result": result}
+
+    async def graph_conversation(self, state: ConversationGraphState) -> dict[str, Any]:
+        session = state["session"]
+        decision: RouterDecision = state["decision"]
         if decision.intent is Intent.INAPPROPRIATE or decision.inappropriate:
             session.mode = ConversationState.CONVERSING
-            return ConversationResult(replies=[self._fixed("inappropriate")], state=session.mode)
-        if decision.intent is Intent.MUSIC_QUESTION_AND_REQUEST and decision.answer:
-            first_reply = decision.answer
-        else:
-            first_reply = ""
-
-        if decision.intent in (Intent.MUSIC_REQUEST, Intent.MUSIC_QUESTION_AND_REQUEST):
-            result = await self._handle_request(session, message, text, audio_path, decision)
-            if first_reply:
-                result.replies.insert(0, first_reply)
-            return result
+            return {"result": ConversationResult(replies=[self._fixed("inappropriate")], state=session.mode)}
         if decision.intent is Intent.MUSIC_QUESTION:
             session.mode = ConversationState.CONVERSING
-            return ConversationResult(replies=[decision.answer or "Posso conversar sobre artistas, músicas, álbuns, letras e histórias da música."], state=session.mode)
+            return {"result": ConversationResult(replies=[decision.answer or "Posso conversar sobre artistas, músicas, álbuns, letras e histórias da música."], state=session.mode)}
         if decision.intent is Intent.GREETING:
             session.mode = ConversationState.CONVERSING
-            return ConversationResult(replies=[self._fixed("greeting")], state=session.mode)
+            return {"result": ConversationResult(replies=[self._fixed("greeting")], state=session.mode)}
         if decision.intent is Intent.OFF_TOPIC:
             session.mode = ConversationState.CONVERSING
-            return ConversationResult(replies=["Eu consigo ajudar com música: artistas, álbuns, letras, shows ou pedidos para a rádio."], state=session.mode)
+            return {"result": ConversationResult(replies=["Eu consigo ajudar com música: artistas, álbuns, letras, shows ou pedidos para a rádio."], state=session.mode)}
         session.mode = ConversationState.CONVERSING
-        return ConversationResult(replies=[decision.question or "Você quer conversar sobre música ou pedir uma faixa?"], state=session.mode)
+        return {"result": ConversationResult(replies=[decision.question or "Você quer conversar sobre música ou pedir uma faixa?"], state=session.mode)}
 
     async def _normalize_input(self, message: MessageReceived) -> tuple[str, str | None]:
         if not message.is_audio:
