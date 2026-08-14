@@ -9,7 +9,7 @@ pydub~=0.25
 audioop-lts~=0.2  # compatibilidade do pydub com Python 3.13+
 
 # === Download e conversão ===
-yt-dlp>=2025.1
+yt-dlp>=2025.1  # Atualizado para a versão mais recente durante o build da imagem
 
 # === Servidor webhook ===
 fastapi~=0.131

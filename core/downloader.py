@@ -4,8 +4,8 @@ core/downloader.py
 Etapa 4 do pipeline: Download Dinâmico.
 
 Fluxo quando a música não existe no acervo local:
-  1. Busca o primeiro resultado no YouTube via yt-dlp (query: "artista musica official audio").
-  2. Baixa o melhor áudio disponível para a pasta temp.
+  1. Busca os primeiros resultados no YouTube via yt-dlp (query: "artista musica official audio").
+  2. Tenta os resultados com duração plausível até um download funcionar.
   3. Processa com ffmpeg em um único passo:
        - Converte para .mp3 (192k, 44100 Hz)
        - Remove silêncios de início e fim (silenceremove)
@@ -45,6 +45,42 @@ LUFS_LRA: int = 11
 MAX_DURACAO_S: int = 900                      # 15 min — acima disso não é a música pedida
 MAX_FILESIZE_BYTES: int = 30 * 1024 * 1024    # 30 MB — rede de segurança no próprio download
 SEARCH_N: int = 5                             # nº de resultados avaliados na busca
+
+
+class _FalhaResultadosBloqueados(RuntimeError):
+    """Indica que todos os candidatos falharam por indisponibilidade prevista."""
+
+
+def _limpar_download_parcial(
+    video_id: str,
+    preservar: set[Path] | None = None,
+) -> None:
+    """Remove artefatos de uma tentativa de download que falhou."""
+    preservar = preservar or set()
+    for path in Path(TEMP_DIR).glob(f"{video_id}.*"):
+        if path.resolve() in preservar:
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            # Um artefato que não possa ser removido não deve interromper os
+            # candidatos seguintes nem colocar arquivos fora do escopo em risco.
+            pass
+
+
+def _deve_tentar_busca_alternativa(erro: Exception) -> bool:
+    """Indica erros em que uma segunda busca costuma encontrar outro vídeo."""
+    mensagem = str(erro).lower()
+    return any(
+        trecho in mensagem
+        for trecho in (
+            "403",
+            "forbidden",
+            "not available",
+            "video unavailable",
+            "unable to download video data",
+        )
+    )
 
 
 def _sanitizar_nome(nome: str) -> str:
@@ -90,38 +126,56 @@ def _baixar_youtube(query: str) -> str:
         if not entries:
             raise RuntimeError(f"Nenhum resultado encontrado no YouTube para: '{query}'")
 
-        # Escolhe o primeiro resultado com duração plausível de música.
-        escolhido = next(
-            (e for e in entries if 0 < (e.get("duration") or 0) <= MAX_DURACAO_S),
-            None,
-        )
-        if escolhido is None:
+        candidatos = [
+            e for e in entries
+            if e.get("id") and 0 < (e.get("duration") or 0) <= MAX_DURACAO_S
+        ]
+        if not candidatos:
             duracoes = [e.get("duration") for e in entries]
             raise RuntimeError(
                 f"Nenhum resultado com duração <= {MAX_DURACAO_S // 60} min para '{query}' "
                 f"(durações encontradas, em s: {duracoes})"
             )
 
-        video_id = escolhido["id"]
-        duracao = int(escolhido.get("duration") or 0)
+        falhas: list[str] = []
+        falhas_previstas: list[bool] = []
+        for candidato in candidatos:
+            video_id = candidato["id"]
+            duracao = int(candidato.get("duration") or 0)
+            arquivos_antes = {
+                path.resolve() for path in Path(TEMP_DIR).glob(f"{video_id}.*")
+            }
+            try:
+                # Fase 2 — tenta cada resultado até encontrar um que possa ser baixado.
+                info = ydl.extract_info(
+                    f"https://www.youtube.com/watch?v={video_id}", download=True
+                )
+                ext = info.get("ext", "webm")
+                path_baixado = os.path.join(TEMP_DIR, f"{video_id}.{ext}")
 
-        # Fase 2 — baixa apenas o resultado escolhido.
-        info = ydl.extract_info(
-            f"https://www.youtube.com/watch?v={video_id}", download=True
-        )
-        ext = info.get("ext", "webm")
-        titulo = info.get("title", query)
+                if not os.path.isfile(path_baixado):
+                    raise RuntimeError(
+                        f"Arquivo baixado não encontrado (possível corte por tamanho): {path_baixado}"
+                    )
 
-    path_baixado = os.path.join(TEMP_DIR, f"{video_id}.{ext}")
+                titulo = info.get("title", query)
+                print(f"[DOWNLOADER] Baixado: '{titulo}' ({duracao // 60}min{duracao % 60:02d}s)")
+                return path_baixado
+            except Exception as erro:
+                falhas.append(f"{video_id}: {erro}")
+                falhas_previstas.append(_deve_tentar_busca_alternativa(erro))
+                _limpar_download_parcial(video_id, preservar=arquivos_antes)
+                print(
+                    f"[DOWNLOADER] Falha no resultado {video_id}: {erro} — "
+                    "tentando o próximo resultado..."
+                )
 
-    if not os.path.isfile(path_baixado):
-        # Cai aqui também quando o max_filesize aborta o download.
-        raise RuntimeError(
-            f"Arquivo baixado não encontrado (possível corte por tamanho): {path_baixado}"
-        )
-
-    print(f"[DOWNLOADER] Baixado: '{titulo}' ({duracao // 60}min{duracao % 60:02d}s)")
-    return path_baixado
+        resumo = " | ".join(falhas)
+        if falhas_previstas and all(falhas_previstas):
+            raise _FalhaResultadosBloqueados(
+                f"Todos os resultados estavam bloqueados ou indisponíveis para '{query}': {resumo}"
+            )
+        raise RuntimeError(f"Todos os resultados falharam para '{query}': {resumo}")
 
 
 def _processar_ffmpeg(path_entrada: str, path_saida: str) -> None:
@@ -197,13 +251,10 @@ def baixar(artista: str, musica: str) -> str:
     query = f"{artista} {musica} official audio"
     try:
         path_temp = _baixar_youtube(query)
-    except Exception as e:
-        if "not available" in str(e).lower():
-            query_fallback = f"{artista} {musica} lyrics"
-            print(f"[DOWNLOADER] Vídeo indisponível — tentando fallback: '{query_fallback}'")
-            path_temp = _baixar_youtube(query_fallback)
-        else:
-            raise
+    except _FalhaResultadosBloqueados:
+        query_fallback = f"{artista} {musica} lyrics"
+        print(f"[DOWNLOADER] Resultado bloqueado/indisponível — tentando fallback: '{query_fallback}'")
+        path_temp = _baixar_youtube(query_fallback)
 
     nome_arquivo = _sanitizar_nome(f"{artista} - {musica}") + ".mp3"
     path_final = os.path.join(ACERVO_DIR, nome_arquivo)
