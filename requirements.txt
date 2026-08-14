@@ -1,5 +1,6 @@
 # === LLM / Inteligência ===
 openai~=2.13
+langgraph~=0.6
 
 # === Banco de dados ===
 psycopg2-binary~=2.9

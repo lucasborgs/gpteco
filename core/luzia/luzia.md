@@ -71,7 +71,7 @@ Você quis dizer '{musica}' de {artista}?
 Responda *SIM* para confirmar ou digite o nome correto da música.
 
 ## pilula_prefixo
-*CURIOSIDADE:*
+E essa tem uma história boa:
 
 # 🎨 Tom da LuzIA
 > Controla o tom de TODAS as mensagens GERADAS (recusas e curiosidades personalizadas).

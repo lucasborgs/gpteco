@@ -52,6 +52,7 @@ def processar_pedido(
     path_ogg: str | None = None,
     texto: str | None = None,
     notificar: callable | None = None,
+    _metadados_confirmados: intelligence.MetadadosMusica | None = None,
 ) -> dict:
     """
     Executa o pipeline completo e retorna sempre um dict estruturado.
@@ -69,13 +70,14 @@ def processar_pedido(
     """
     # --- Validação de entrada ---
     if not path_ogg and not texto:
-        return _resultado(False, None, _MSG_ERRO)
+        return _resultado(False, None, _MSG_ERRO, codigo="request_not_identified")
     if path_ogg and not os.path.isfile(path_ogg):
-        return _resultado(False, None, _MSG_ERRO)
+        return _resultado(False, None, _MSG_ERRO, codigo="unexpected_error")
 
     # Modo retry: path_ogg + texto fornecidos juntos.
     # O texto é a confirmação digitada pelo ouvinte; o áudio é usado só para a mixagem.
     _is_retry = bool(path_ogg and texto)
+    _is_confirmado = _metadados_confirmados is not None
 
     os.makedirs(TEMP_DIR, exist_ok=True)
 
@@ -83,13 +85,16 @@ def processar_pedido(
 
     try:
         # --- Etapa 1: Transcrição STT ---
-        if path_ogg and not _is_retry:
+        if _is_confirmado:
+            _log_etapa(1, "Pedido confirmado — STT e LLM ignorados")
+            print(f"[PIPELINE] Pedido confirmado: '{_metadados_confirmados.musica}' - '{_metadados_confirmados.artista}'")
+        elif path_ogg and not _is_retry:
             _log_etapa(1, "Transcrição STT")
             if notificar:
                 notificar("🎤 Processando seu áudio...")
             texto = stt.transcrever(path_ogg)
             if not texto.strip():
-                return _resultado(False, None, "Não consegui entender o áudio. Pode reenviar ou mandar um texto com o nome da música?")
+                return _resultado(False, None, "Não consegui entender o áudio. Pode reenviar ou mandar um texto com o nome da música?", codigo="stt_unintelligible")
             if notificar:
                 notificar(f"Entendi: \"{texto}\"\n\nBuscando a música...")
         elif _is_retry:
@@ -100,8 +105,8 @@ def processar_pedido(
             print(f"[PIPELINE] Texto recebido: \"{texto}\"")
 
         # --- Etapa 2: Inteligência + Regras de Negócio ---
-        _log_etapa(2, "Análise LLM")
-        metadados = intelligence.analisar(texto)
+        _log_etapa(2, "Análise LLM" if not _is_confirmado else "Metadados já confirmados")
+        metadados = _metadados_confirmados if _is_confirmado else intelligence.analisar(texto)
 
         # Qualquer mensagem fora do escopo musical (saudação, agradecimento,
         # pergunta solta) apresenta o menu. A janela pós-sucesso é tratada antes,
@@ -148,7 +153,10 @@ def processar_pedido(
 
         # --- Etapa 3: Busca no Acervo Local ---
         _log_etapa(3, "Busca no acervo local")
-        file_path = database.buscar_musica(metadados.artista, metadados.musica)
+        try:
+            file_path = database.buscar_musica(metadados.artista, metadados.musica)
+        except Exception:
+            return _resultado(False, None, _MSG_ERRO, codigo="database_failed")
 
         # --- Etapa 4: Download Dinâmico (somente se necessário) ---
         if file_path:
@@ -158,7 +166,10 @@ def processar_pedido(
             # Notifica apenas pedidos por texto (áudio já recebeu "Buscando a música..." no STT)
             if not path_ogg and notificar:
                 notificar("🔎 Buscando sua música...")
-            file_path = downloader.baixar(metadados.artista, metadados.musica)
+            try:
+                file_path = downloader.baixar(metadados.artista, metadados.musica)
+            except Exception:
+                return _resultado(False, None, _MSG_ERRO, codigo="download_failed")
 
         # --- Etapa 5: Mixagem (somente se havia voz para misturar) ---
         _log_etapa(5, "Mixagem de áudio")
@@ -166,13 +177,16 @@ def processar_pedido(
             notificar("🔀 Mixando sua voz com a música...")
         nome_saida = _gerar_nome_arquivo(metadados.artista, metadados.musica)
 
-        if path_ogg:
-            path_temp_mix = str(Path(TEMP_DIR) / nome_saida)
-            path_entrega = audio_mixer.mixar(path_ogg, file_path, path_temp_mix)
-        else:
-            # Pedido por texto: não há voz do ouvinte para mixar.
-            # A música do acervo vai direto para a fila sem overlay.
-            path_entrega = file_path
+        try:
+            if path_ogg:
+                path_temp_mix = str(Path(TEMP_DIR) / nome_saida)
+                path_entrega = audio_mixer.mixar(path_ogg, file_path, path_temp_mix)
+            else:
+                # Pedido por texto: não há voz do ouvinte para mixar.
+                # A música do acervo vai direto para a fila sem overlay.
+                path_entrega = file_path
+        except Exception:
+            return _resultado(False, None, _MSG_ERRO, codigo="mix_failed")
 
         # --- Etapa 6: Entrega ao ZaraRadio (via fila gerenciada) ---
         _log_etapa(6, "Entrega ao ZaraRadio")
@@ -191,7 +205,7 @@ def processar_pedido(
             # Limpa o arquivo temporário para evitar acúmulo em TEMP
             if os.path.isfile(path_para_enfileirar):
                 os.remove(path_para_enfileirar)
-            raise
+            return _resultado(False, None, _MSG_ERRO, codigo="queue_failed")
 
         # --- Etapa 7: Registro do pedido (ativa cooldown) ---
         # Registrado APÓS enfileirar bem-sucedido: cooldown só ativa se a música
@@ -218,7 +232,43 @@ def processar_pedido(
             database.registrar_pedido(numero, artista, musica, sucesso=False, motivo_rejeicao="erro_tecnico")
         except Exception:
             pass
-        return _resultado(False, None, _MSG_ERRO)
+        return _resultado(False, None, _MSG_ERRO, codigo="unexpected_error")
+
+
+def executar_pedido_confirmado(
+    *,
+    numero: str,
+    artista: str,
+    musica: str,
+    path_ogg: str | None = None,
+    notificar: callable | None = None,
+) -> dict:
+    """Entrada aditiva para pedidos já confirmados.
+
+    Reutiliza todas as etapas do ``processar_pedido``. O objeto de metadados é
+    injetado diretamente, então não há nova chamada de STT ou LLM; o cooldown
+    ainda é revalidado pelo caminho comum antes de consultar o acervo.
+    """
+    artista = artista.strip()
+    musica = musica.strip()
+    if not artista or not musica:
+        return _resultado(False, None, "", codigo="request_not_identified")
+    metadados = intelligence.MetadadosMusica(
+        is_pedido_musical=True,
+        musica=musica,
+        artista=artista,
+        is_flashback=True,
+        is_apropriado=True,
+        is_confiante=True,
+        is_pedido_explicito=True,
+    )
+    return processar_pedido(
+        numero=numero,
+        path_ogg=path_ogg,
+        texto=f"{musica} {artista}",
+        notificar=notificar,
+        _metadados_confirmados=metadados,
+    )
 
 
 # --- Helpers internos ---
@@ -233,6 +283,7 @@ def _resultado(
     artista: str | None = None,
     musica: str | None = None,
     is_pedido_explicito: bool = False,
+    codigo: str | None = None,
 ) -> dict:
     return {
         "sucesso": sucesso,
@@ -244,6 +295,7 @@ def _resultado(
         "artista": artista,
         "musica": musica,
         "is_pedido_explicito": is_pedido_explicito,
+        "codigo": codigo or ("success" if sucesso else "unexpected_error"),
     }
 
 

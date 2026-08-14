@@ -33,9 +33,12 @@ LLM_MODEL: str = os.getenv("LLM_MODEL", _MODELO_PADRAO)
 if _USAR_GROQ:
     _client = OpenAI(api_key=_GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
     print(f"[LLM] Provedor: Groq | Modelo: {LLM_MODEL}")
-else:
+elif _OPENAI_API_KEY:
     _client = OpenAI(api_key=_OPENAI_API_KEY)
     print(f"[LLM] Provedor: OpenAI | Modelo: {LLM_MODEL}")
+else:
+    _client = None
+    print("[LLM] Sem API key — análise indisponível; servidor inicia com fallback seguro.")
 
 
 @dataclass
@@ -69,6 +72,9 @@ def analisar(texto_transcrito: str) -> MetadadosMusica:
     system_prompt = config_radio.build_system_prompt()
 
     print(f"[LLM] Analisando: \"{texto_transcrito}\"")
+
+    if _client is None:
+        raise RuntimeError("LLM indisponível: nenhuma API key configurada")
 
     try:
         response = _client.chat.completions.create(

@@ -26,13 +26,14 @@ API pública:
 from __future__ import annotations
 
 import re
+import os
 from pathlib import Path
 
 _MD_PATH = Path(__file__).parent / "luzia.md"
 
 # Cache com invalidação por mtime + memória do último parse válido (resiliência:
 # se alguém salvar um .md quebrado em produção, seguimos servindo o último bom).
-_cache: dict = {"mtime": 0.0, "data": None}
+_cache: dict = {"mtime": 0.0, "path": None, "data": None}
 
 # Mapeia título de seção (por palavra-chave, tolerante a emoji/acento) → chave canônica
 _SECTION_KEYS = [
@@ -147,25 +148,54 @@ def _parse(texto: str) -> dict:
 
 
 def _load() -> dict:
-    """Relê luzia.md se o arquivo mudou; senão devolve o cache."""
+    """Relê o perfil externo se mudou, com fallback para a última versão válida.
+
+    ``ASSISTANT_PROFILE_PATH`` é opcional. Em ``legacy`` o arquivo empacotado
+    continua sendo suficiente; um perfil externo só passa a ser lido quando
+    existir no caminho configurado.
+    """
+    configured = os.getenv("ASSISTANT_PROFILE_PATH", "").strip()
+    candidate = Path(configured) if configured else _MD_PATH
+    if not candidate.is_file():
+        candidate = _MD_PATH
     try:
-        mtime = _MD_PATH.stat().st_mtime
+        mtime = candidate.stat().st_mtime
     except OSError as e:
         if _cache["data"] is not None:
             return _cache["data"]
         raise RuntimeError(f"luzia.md não encontrado: {e}") from e
 
-    if mtime != _cache["mtime"] or _cache["data"] is None:
+    if mtime != _cache["mtime"] or candidate != _cache["path"] or _cache["data"] is None:
         try:
-            data = _parse(_MD_PATH.read_text(encoding="utf-8"))
+            data = _parse(candidate.read_text(encoding="utf-8"))
+            _validate_structure(data)
             _cache["data"] = data
             _cache["mtime"] = mtime
+            _cache["path"] = candidate
         except Exception as e:  # parse quebrado → mantém último bom, loga
             if _cache["data"] is not None:
-                print(f"[LUZIA] Falha ao reler luzia.md ({e}); mantendo versão anterior.")
+                print(f"[LUZIA] Falha ao reler perfil ({e}); mantendo versão anterior.")
                 return _cache["data"]
+            if candidate != _MD_PATH:
+                data = _parse(_MD_PATH.read_text(encoding="utf-8"))
+                _validate_structure(data)
+                _cache.update(data=data, mtime=_MD_PATH.stat().st_mtime, path=_MD_PATH)
+                return data
             raise
     return _cache["data"]
+
+
+def _validate_structure(data: dict) -> None:
+    """Validação mínima de runtime; regras críticas continuam protegidas no código."""
+    required = {"mensagens", "tom", "regras_duras", "composer", "curador", "repertorio", "classificador"}
+    missing = required - set(data.get("secoes", {}))
+    if missing:
+        raise ValueError(f"seções obrigatórias ausentes: {sorted(missing)}")
+    messages = data["secoes"].get("mensagens", {}).get("subs", {})
+    required_messages = {"sucesso", "saudacao", "producao_ativado", "cooldown", "nao_repertorio", "nao_id", "confirmacao", "pilula_prefixo"}
+    missing_messages = required_messages - set(messages)
+    if missing_messages:
+        raise ValueError(f"mensagens obrigatórias ausentes: {sorted(missing_messages)}")
 
 
 # ---------------------------------------------------------------------------
