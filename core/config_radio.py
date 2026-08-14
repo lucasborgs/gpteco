@@ -1,15 +1,16 @@
 """
 core/config_radio.py
 
-Shim de compatibilidade. A configuração da rádio agora vive em
-core/luzia/luzia.md (editável pelo time da rádio, com hot-reload).
+Shim de compatibilidade. O perfil editável da rádio vive em
+core/luzia/luzia.md (identidade, tom, repertório e mensagens, com hot-reload).
 
 Este módulo é mantido apenas para não quebrar imports existentes
 (`from core import config_radio`). Todo acesso é delegado, em tempo de
 execução, para core/luzia — preservando o hot-reload (cada leitura relê o
 .md se ele mudou).
 
-Para alterar mensagens, tom ou o prompt da LuzIA: edite luzia.md.
+Para alterar mensagens ou tom, edite luzia.md. O contrato técnico do
+classificador permanece em código e não pode ser substituído pelo perfil.
 """
 
 from __future__ import annotations

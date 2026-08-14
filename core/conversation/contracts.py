@@ -51,10 +51,6 @@ class MessageReceived:
     received_at: float | None = None
 
 
-# Alias semântico usado em integrações que preferem o nome mais longo.
-ReceivedMessage = MessageReceived
-
-
 @dataclass(slots=True)
 class PendingRequest:
     artist: str
@@ -88,13 +84,14 @@ class RouterDecision:
     artist: str = ""
     music: str = ""
     genre: str = ""
+    decade: str = ""
     confidence: bool = True
-    in_repertoire: bool | None = None
     answer: str = ""
     question: str = ""
     missing: tuple[str, ...] = ()
     inappropriate: bool = False
     reason: str = ""
+    failure_code: str = ""
 
 
 @dataclass(slots=True)
@@ -107,6 +104,20 @@ class ExecutorResult:
     music: str = ""
     details: dict[str, Any] = field(default_factory=dict)
 
+    @classmethod
+    def from_pipeline_result(cls, raw: dict[str, Any], *, artist: str, music: str) -> "ExecutorResult":
+        """Traduz o resultado legado uma única vez, no adaptador do pipeline."""
+        success = bool(raw.get("sucesso", False))
+        return cls(
+            code=str(raw.get("codigo") or ("success" if success else "unexpected_error")),
+            success=success,
+            delivered=bool(raw.get("entregue", success)),
+            message=str(raw.get("mensagem") or ""),
+            artist=artist,
+            music=music,
+            details=raw,
+        )
+
 
 @dataclass(slots=True)
 class ConversationResult:
@@ -114,8 +125,3 @@ class ConversationResult:
     silent: bool = False
     state: ConversationState = ConversationState.IDLE
     executor_result: ExecutorResult | None = None
-
-    @property
-    def messages(self) -> list[str]:
-        """Nome alternativo conveniente para adaptadores de transporte."""
-        return self.replies

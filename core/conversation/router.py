@@ -7,6 +7,7 @@ permanecem no orquestrador. Um adaptador fake pode implementar ``route`` ou
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import os
@@ -18,6 +19,10 @@ from .contracts import Intent, RouterDecision
 
 class Router(Protocol):
     async def route(self, text: str, *, context: list[str] = ()) -> RouterDecision: ...
+
+
+class LLMUnavailable(RuntimeError):
+    """A chamada ao provedor não pôde ser concluída; não é ambiguidade do usuário."""
 
 
 _PRODUCTION = re.compile(r"\b(produ[cç][aã]o|reclama[cç][aã]o|den[uú]ncia|promo[cç][aã]o|promocional|sorteio)\b", re.I)
@@ -48,7 +53,9 @@ class StructuredRouter:
             try:
                 raw = await self._call_llm(text, context)
                 return self._coerce(raw)
-            except Exception:
+            except LLMUnavailable:
+                return RouterDecision(Intent.UNCLEAR, failure_code="llm_unavailable")
+            except (TypeError, ValueError, json.JSONDecodeError):
                 return RouterDecision(Intent.UNCLEAR, question="Você quer conversar sobre música ou pedir uma faixa?")
         return RouterDecision(Intent.UNCLEAR, question="Você quer conversar sobre música ou pedir uma faixa?")
 
@@ -68,17 +75,24 @@ class StructuredRouter:
         prompt = {
             "message": text,
             "recent_messages": context,
-            "schema": "intent, artist, music, genre, confidence, in_repertoire, answer, question, missing",
+            "schema": "intent, artist, music, genre, decade, confidence, answer, question, missing",
             "intents": [item.value for item in Intent],
         }
         target = self.llm
-        if hasattr(target, "ainvoke"):
-            return await target.ainvoke(prompt)
-        if hasattr(target, "invoke"):
-            result = target.invoke(prompt)
-            return await result if inspect.isawaitable(result) else result
-        result = target(prompt) if callable(target) else target
-        return await result if inspect.isawaitable(result) else result
+        try:
+            if hasattr(target, "ainvoke"):
+                return await target.ainvoke(prompt)
+            if hasattr(target, "invoke"):
+                result = await asyncio.to_thread(target.invoke, prompt)
+                return await result if inspect.isawaitable(result) else result
+            if callable(target):
+                if inspect.iscoroutinefunction(target):
+                    return await target(prompt)
+                result = await asyncio.to_thread(target, prompt)
+                return await result if inspect.isawaitable(result) else result
+            return target
+        except Exception as error:
+            raise LLMUnavailable("Router indisponível") from error
 
     @staticmethod
     def _coerce(raw: Any) -> RouterDecision:
@@ -104,8 +118,8 @@ class StructuredRouter:
             artist=str(raw.get("artist", raw.get("artista", "")) or "").strip(),
             music=str(raw.get("music", raw.get("musica", "")) or "").strip(),
             genre=str(raw.get("genre", raw.get("genero", "")) or "").strip(),
+            decade=str(raw.get("decade", raw.get("decada", "")) or "").strip(),
             confidence=to_bool(raw.get("confidence", raw.get("is_confiante", True)), True),
-            in_repertoire=raw.get("in_repertoire", raw.get("is_flashback")),
             answer=str(raw.get("answer", raw.get("resposta", "")) or "").strip(),
             question=str(raw.get("question", raw.get("pergunta", "")) or "").strip(),
             missing=tuple(str(item) for item in missing),
@@ -121,6 +135,7 @@ def build_default_router() -> StructuredRouter:
         return StructuredRouter()
     try:
         from openai import OpenAI
+        from core import luzia
 
         client = OpenAI(
             api_key=api_key,
@@ -133,7 +148,7 @@ def build_default_router() -> StructuredRouter:
                 model=model,
                 response_format={"type": "json_object"},
                 messages=[
-                    {"role": "system", "content": "Classifique a mensagem musical. Retorne JSON, nunca execute ferramentas."},
+                    {"role": "system", "content": luzia.router_technical_prompt()},
                     {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
                 ],
                 temperature=0,

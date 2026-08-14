@@ -1,22 +1,36 @@
-"""Adaptador do executor confirmado para o pipeline musical atual."""
+"""Seam único entre a conversa e o pipeline musical confirmado."""
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+from collections.abc import Callable
+from typing import Protocol
 
-from core.pipeline import executar_pedido_confirmado
+from .contracts import ExecutorResult, PendingRequest
+
+
+class ConfirmedRequestExecutor(Protocol):
+    """Executa exatamente um pedido já confirmado e devolve seu resultado."""
+
+    async def execute(self, request: PendingRequest) -> ExecutorResult: ...
 
 
 class ConfirmedPipelineExecutor:
     """Não interpreta novamente: passa artista/música já confirmados ao pipeline."""
 
-    def __init__(self, *, jid: str | None = None) -> None:
-        self.jid = jid
+    def __init__(self, pipeline: Callable[..., dict] | None = None) -> None:
+        self._pipeline = pipeline
 
-    def executar_pedido_confirmado(self, *, numero: str = "", jid: str = "", artista: str, musica: str, path_ogg: str | None = None, **_: Any) -> dict:
-        return executar_pedido_confirmado(
-            numero=self.jid or jid or numero,
-            artista=artista,
-            musica=musica,
-            path_ogg=path_ogg,
+    async def execute(self, request: PendingRequest) -> ExecutorResult:
+        pipeline = self._pipeline
+        if pipeline is None:
+            from core.pipeline import executar_pedido_confirmado
+            pipeline = executar_pedido_confirmado
+        raw = await asyncio.to_thread(
+            pipeline,
+            numero=request.jid,
+            artista=request.artist,
+            musica=request.music,
+            path_ogg=request.audio_path,
         )
+        return ExecutorResult.from_pipeline_result(raw, artist=request.artist, music=request.music)

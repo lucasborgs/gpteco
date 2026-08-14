@@ -39,7 +39,3 @@ class ConversationSelector:
         if self.mode is ConversationMode.ALLOWLIST:
             return jid in self.allowed_jids
         return False
-
-    # Nomes alternativos para tornar a costura autoexplicativa em testes e no servidor.
-    should_use = uses_conversation
-    seleciona_conversa = uses_conversation

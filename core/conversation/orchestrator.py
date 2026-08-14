@@ -7,7 +7,7 @@ import inspect
 import os
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from typing import Any
 
 from core import config_radio
@@ -24,6 +24,8 @@ from .contracts import (
 from .router import Router, build_default_router
 from .session import InMemorySessionStore
 from .graph import build_conversation_graph
+from .executor import ConfirmedRequestExecutor
+from .repertoire import DeterministicRepertoireChecker
 
 
 _YES = re.compile(r"^(sim|s|isso|exato|pode colocar|pode tocar|manda|mand[aá]|confirma|confirmo|yes|ok|pode)$", re.I)
@@ -37,12 +39,12 @@ class ConversationOrchestrator:
         self,
         *,
         router: Router,
-        executor: Any,
+        executor: ConfirmedRequestExecutor,
         session_store: InMemorySessionStore | None = None,
         media_downloader: Callable[[dict[str, Any]], Any] | None = None,
         transcriber: Callable[[str], Any] | None = None,
         cooldown_checker: Callable[[str], Any] | None = None,
-        repertoire_checker: Callable[[str, str, str, RouterDecision], Any] | None = None,
+        repertoire_checker: DeterministicRepertoireChecker | None = None,
         composer: Callable[[str, dict[str, Any], str], Any] | None = None,
         curiosity: Callable[[str, str], Any] | None = None,
         clock: Callable[[], float] = time.time,
@@ -62,7 +64,7 @@ class ConversationOrchestrator:
         self.media_downloader = media_downloader
         self.transcriber = transcriber
         self.cooldown_checker = cooldown_checker
-        self.repertoire_checker = repertoire_checker
+        self.repertoire_checker = repertoire_checker or DeterministicRepertoireChecker.from_profile()
         self.composer = composer
         self.curiosity = curiosity
         self.clock = clock
@@ -86,12 +88,8 @@ class ConversationOrchestrator:
             return ConversationResult(silent=True, state=ConversationState.IDLE)
         lock = self._locks.setdefault(mensagem_recebida.jid, asyncio.Lock())
         async with lock:
-            if self.graph is not None:
-                output = await self.graph.ainvoke({"message": mensagem_recebida})
-                return output["result"]
-            return await self._processar_serial(mensagem_recebida)
-
-    process = processar
+            output = await self.graph.ainvoke({"message": mensagem_recebida})
+            return output["result"]
 
     async def _processar_serial(self, message: MessageReceived) -> ConversationResult:
         session = self.sessions.get_or_create(message.jid)
@@ -125,11 +123,10 @@ class ConversationOrchestrator:
             session.mode = ConversationState.COLLECTING_REQUEST
             return ConversationResult(replies=["Me manda o nome da música e do artista que você quer ouvir."], state=session.mode)
 
-        try:
-            decision = await self.router.route(text, context=tuple(session.recent_messages[-10:]))
-        except TypeError:
-            # Fakes e adaptadores mínimos podem aceitar apenas o texto.
-            decision = await self._maybe_await(self.router.route, text)
+        decision = await self.router.route(text, context=session.recent_messages[-10:])
+        if decision.failure_code == "llm_unavailable":
+            session.mode = ConversationState.CONVERSING
+            return ConversationResult(replies=[self._fixed("llm_unavailable")], state=session.mode)
         if decision.intent in (Intent.PRODUCTION, Intent.COMPLAINT, Intent.REPORT, Intent.PROMOTION):
             self.sessions.activate_production(session, self.production_timeout_seconds)
             return ConversationResult(replies=[self._fixed("production")], state=ConversationState.PRODUCTION)
@@ -164,13 +161,13 @@ class ConversationOrchestrator:
         # Esta função só é chamada depois da trava de produção.
         raw = message.raw_payload or {}
         try:
-            path = await self._maybe_await(self.media_downloader, raw)
+            path = await self._call_adapter(self.media_downloader, raw)
         except Exception:
             return "", None
         if not path:
             return "", None
         try:
-            transcript = await self._maybe_await(self.transcriber, path)
+            transcript = await self._call_adapter(self.transcriber, path)
         except Exception:
             self._remove_file(str(path))
             return "", None
@@ -199,18 +196,13 @@ class ConversationOrchestrator:
             missing_text = " e ".join(dict.fromkeys(missing)) or "o nome da música e do artista"
             return ConversationResult(replies=[f"Qual {missing_text} você quer pedir?"], state=session.mode)
 
-        if decision.in_repertoire is False:
+        allowed = self.repertoire_checker.allows(artist, music, decision.genre, decision.decade)
+        if not allowed:
             self.sessions.clear_pending(session)
             session.mode = ConversationState.CONVERSING
             return ConversationResult(replies=[self._compose("out_of_repertoire", {"artist": artist, "music": music})], state=session.mode)
-        if self.repertoire_checker is not None:
-            allowed = await self._maybe_await(self.repertoire_checker, artist, music, decision.genre, decision)
-            if not allowed:
-                self.sessions.clear_pending(session)
-                session.mode = ConversationState.CONVERSING
-                return ConversationResult(replies=[self._compose("out_of_repertoire", {"artist": artist, "music": music})], state=session.mode)
 
-        if not await self._maybe_await(self.cooldown_checker, message.jid):
+        if not await self._call_adapter(self.cooldown_checker, message.jid):
             # Cooldown não muda o estado de conversa nem consulta acervo.
             if audio_path:
                 self._remove_file(audio_path)
@@ -251,7 +243,7 @@ class ConversationOrchestrator:
             replies = [result.message or self._success_message(pending)]
             if self.curiosity and not self.sessions.production_active(session):
                 try:
-                    fact = await self._maybe_await(self.curiosity, pending.artist, pending.music)
+                    fact = await self._call_adapter(self.curiosity, pending.artist, pending.music)
                     if fact:
                         replies.append(str(fact))
                 except Exception:
@@ -262,34 +254,8 @@ class ConversationOrchestrator:
         return ConversationResult(replies=[self._failure_message(result.code)], state=session.mode, executor_result=result)
 
     async def _execute(self, pending: PendingRequest) -> ExecutorResult:
-        target = self.executor
         try:
-            if hasattr(target, "executar_pedido_confirmado"):
-                raw = target.executar_pedido_confirmado(
-                    numero=pending.jid,
-                    jid=pending.jid,
-                    artista=pending.artist,
-                    musica=pending.music,
-                    path_ogg=pending.audio_path,
-                )
-            elif hasattr(target, "execute"):
-                raw = target.execute(pending)
-            else:
-                raw = target(pending)
-            raw = await raw if inspect.isawaitable(raw) else raw
-            if isinstance(raw, ExecutorResult):
-                return raw
-            if isinstance(raw, dict):
-                return ExecutorResult(
-                    code=str(raw.get("codigo", raw.get("code", "success" if raw.get("sucesso") else "unexpected_error"))),
-                    success=bool(raw.get("success", raw.get("sucesso", False))),
-                    delivered=bool(raw.get("delivered", raw.get("entregue", raw.get("sucesso", False)))),
-                    message=str(raw.get("message", raw.get("mensagem", "")) or ""),
-                    artist=pending.artist,
-                    music=pending.music,
-                    details=raw,
-                )
-            raise TypeError("executor retornou um tipo desconhecido")
+            return await self.executor.execute(pending)
         except Exception as exc:
             return ExecutorResult(code="unexpected_error", details={"exception": str(exc)})
 
@@ -300,6 +266,8 @@ class ConversationOrchestrator:
             return getattr(config_radio, "MSG_SAUDACAO", "Oi! Posso ajudar com música?")
         if kind == "inappropriate":
             return getattr(config_radio, "MSG_INAPROPRIADO", "Vamos manter o respeito. Posso ajudar com música.")
+        if kind == "llm_unavailable":
+            return getattr(config_radio, "MSG_LLM_UNAVAILABLE", "Não consegui concluir isso agora. Tenta de novo daqui a pouquinho?")
         return "Não consegui concluir isso agora. Tenta de novo daqui a pouquinho?"
 
     def _compose(self, kind: str, context: dict[str, Any]) -> str:
@@ -339,8 +307,11 @@ class ConversationOrchestrator:
         }.get(code, "Ô, parece que alguma coisa saiu do ritmo por aqui e não consegui concluir seu pedido agora. Tenta de novo daqui a pouquinho?")
 
     @staticmethod
-    async def _maybe_await(fn: Callable[..., Any], *args: Any) -> Any:
-        value = fn(*args)
+    async def _call_adapter(fn: Callable[..., Any], *args: Any) -> Any:
+        """Mantém adaptadores async no loop e desloca os síncronos para thread."""
+        if inspect.iscoroutinefunction(fn):
+            return await fn(*args)
+        value = await asyncio.to_thread(fn, *args)
         return await value if inspect.isawaitable(value) else value
 
     @staticmethod

@@ -99,6 +99,10 @@ in memory with a 15-minute TTL and one worker is required. `ASSISTANT_PROFILE_PA
 can point to an external, read-only Markdown profile; otherwise the packaged
 profile is used and invalid edits retain the last valid version.
 
+The external profile controls station identity, tone, repertoire values and
+fixed fallback messages. Router schema, production priority, confirmation,
+idempotency and pipeline safeguards remain protected in code.
+
 The experimental layer adds one Router call per ordinary conversational turn,
 while deterministic production, confirmation and cancellation paths use no LLM
 call. A curiosity is optional and may add one best-effort call after success.

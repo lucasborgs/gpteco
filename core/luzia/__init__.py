@@ -1,279 +1,215 @@
-"""
-core/luzia/__init__.py
+"""Perfil editável da rádio, separado das regras técnicas da aplicação.
 
-Carrega a "constituição" da LuzIA a partir de core/luzia/luzia.md e expõe a
-mesma API pública que core/config_radio.py tinha — mais alguns acessos novos
-usados pelo composer (recusas) e pelo curador contextual.
-
-Por que markdown?
-  - Versionável e revisável em git como qualquer texto.
-  - Editável pelo time da rádio (tom e mensagens) sem mexer em Python.
-  - Hot-reload: o servidor relê o arquivo quando ele muda (sem rebuild Docker).
-
-Compatibilidade:
-  As constantes MSG_* e build_system_prompt() continuam disponíveis com os
-  mesmos nomes e valores de antes (ver core/luzia/schema.py para validação).
-
-API pública:
-    NOME_RADIO, GENERO_ACEITO, ANO_MAXIMO         (atributos)
-    MSG_SUCESSO, MSG_COOLDOWN, ... MSG_ENCERRAMENTO (atributos)
-    build_system_prompt() -> str
-    diretrizes_luzia()    -> str   (tom + regras duras, p/ system prompt gerado)
-    instrucao_composer(situacao) -> str
-    instrucao_curador_contexto() -> str
+O Markdown externo fornece identidade, tom, repertório e textos de fallback.
+Schemas do Router, prioridade de intenções, confirmação, idempotência e
+salvaguardas vivem abaixo, em constantes internas que o perfil não substitui.
 """
 
 from __future__ import annotations
 
-import re
 import os
+import re
 from pathlib import Path
 
 _MD_PATH = Path(__file__).parent / "luzia.md"
-
-# Cache com invalidação por mtime + memória do último parse válido (resiliência:
-# se alguém salvar um .md quebrado em produção, seguimos servindo o último bom).
 _cache: dict = {"mtime": 0.0, "path": None, "data": None}
 
-# Mapeia título de seção (por palavra-chave, tolerante a emoji/acento) → chave canônica
-_SECTION_KEYS = [
-    ("mensagens", "mensagens"),
-    ("tom da luzia", "tom"),
-    ("regras duras", "regras_duras"),
-    ("composer", "composer"),
-    ("curador", "curador"),
-    ("repert", "repertorio"),
-    ("classificador", "classificador"),
-]
-
-# Constante MSG_* → slug da subseção em "# Mensagens fixas"
+_SECTION_KEYS = [("perfil", "perfil"), ("mensagens", "mensagens"), ("tom", "tom"),
+                 ("repert", "repertorio"), ("exempl", "exemplos")]
 _MSG_SLUG = {
-    "MSG_SUCESSO": "sucesso",
-    "MSG_COOLDOWN": "cooldown",
-    "MSG_INAPROPRIADO": "inapropriado",
-    "MSG_NAO_REPERTORIO": "nao_repertorio",
-    "MSG_NAO_ID": "nao_id",
-    "MSG_CONFIRMACAO": "confirmacao",
-    "MSG_SAUDACAO": "saudacao",
-    "MSG_AGUARDANDO_PEDIDO": "aguardando_pedido",
-    "MSG_PRODUCAO_ATIVADO": "producao_ativado",
-    "MSG_MENU_POS_SUCESSO": "menu_pos_sucesso",
-    "MSG_ENCERRAMENTO": "encerramento",
+    "MSG_SUCESSO": "sucesso", "MSG_COOLDOWN": "cooldown",
+    "MSG_INAPROPRIADO": "inapropriado", "MSG_NAO_REPERTORIO": "nao_repertorio",
+    "MSG_NAO_ID": "nao_id", "MSG_CONFIRMACAO": "confirmacao",
+    "MSG_SAUDACAO": "saudacao", "MSG_AGUARDANDO_PEDIDO": "aguardando_pedido",
+    "MSG_PRODUCAO_ATIVADO": "producao_ativado", "MSG_MENU_POS_SUCESSO": "menu_pos_sucesso",
+    "MSG_ENCERRAMENTO": "encerramento", "MSG_LLM_UNAVAILABLE": "llm_unavailable",
 }
-
-# Situações de recusa esperadas (usadas pelo composer)
 SITUACOES_COMPOSER = ("nao_repertorio", "cooldown", "inapropriado", "nao_id", "confirmacao")
 
-
-# ---------------------------------------------------------------------------
-# Parsing
-# ---------------------------------------------------------------------------
-
-def _parse_frontmatter(bloco: str) -> dict:
-    """Frontmatter simples chave: valor (sem dependência de PyYAML)."""
-    fm: dict = {}
-    for linha in bloco.split("\n"):
-        linha = linha.strip()
-        if not linha or linha.startswith("#") or ":" not in linha:
-            continue
-        chave, valor = linha.split(":", 1)
-        fm[chave.strip()] = valor.strip()
-    return fm
-
-
-def _clean_block(linhas: list[str]) -> str:
-    """Remove linhas de orientação (começam com '>') e apara as pontas,
-    preservando linhas em branco internas (relevante p/ mensagens com \\n\\n)."""
-    mantidas = [l for l in linhas if not l.lstrip().startswith(">")]
-    return "\n".join(mantidas).strip()
-
-
-def _split_subsections(linhas: list[str]) -> dict:
-    """Divide um bloco em subseções '## slug'. Ignora o preâmbulo antes da 1ª."""
-    subs: dict = {}
-    slug = None
-    buf: list[str] = []
-    for l in linhas:
-        if l.startswith("## "):
-            if slug is not None:
-                subs[slug] = _clean_block(buf)
-            slug = l[3:].strip()
-            buf = []
-        elif slug is not None:
-            buf.append(l)
-    if slug is not None:
-        subs[slug] = _clean_block(buf)
-    return subs
+# Estas instruções são internas. O perfil só é interpolado como dados de
+# marca/repertório, nunca como trecho que muda o protocolo do sistema.
+_ROUTER_TECHNICAL_PROMPT = """Você extrai dados para uma assistente musical.
+Retorne apenas JSON com intent, artist, music, genre, decade, confidence, answer,
+question, missing e inappropriate. Intenções válidas: production, complaint,
+report, promotion, music_request, music_question, music_question_and_request,
+greeting, off_topic, inappropriate, unclear. Nunca autorize repertório, nunca
+execute ações e não prometa que uma faixa entrou na fila. Produção tem prioridade;
+pedidos só serão executados após validação determinística e confirmação explícita."""
+_LEGACY_CLASSIFIER_TECHNICAL_PROMPT = """Você é o classificador de pedidos
+musicais de uma rádio brasileira. Retorne APENAS um objeto JSON válido com as
+chaves is_pedido_musical, musica, artista, is_flashback, is_apropriado,
+is_confiante, is_saudacao, is_pedido_explicito e genero. Extraia artista e
+música quando houver pedido, normalize erros fonéticos apenas se estiver
+confiante e deixe artista/musica vazios quando faltar dado. is_apropriado só
+avalia ofensa direta. Não execute ações, não prometa inclusão na fila e não
+delegue as regras de repertório para o modelo."""
+_COMPOSER_GUARDRAILS = """A situação já foi decidida pelo sistema. Escreva uma
+mensagem breve sem prometer horário, posição na fila, execução ou aviso futuro.
+Não invente artista ou música fora do contexto e não mude a decisão."""
+_CURATOR_GUARDRAILS = """Não altere fatos, não invente dados sobre o ouvinte e
+não anuncie a mensagem como CURIOSIDADE."""
 
 
-def _canonical(titulo: str) -> str | None:
-    t = titulo.lower()
-    for chave, canon in _SECTION_KEYS:
-        if chave in t:
-            return canon
-    return None
+def _parse_frontmatter(block: str) -> dict[str, str]:
+    return {
+        key.strip(): value.strip()
+        for line in block.splitlines() if ":" in line and not line.lstrip().startswith("#")
+        for key, value in [line.split(":", 1)]
+    }
 
 
-def _parse(texto: str) -> dict:
-    # Remove comentários HTML (<!-- ... -->) em qualquer posição
-    texto = re.sub(r"<!--.*?-->", "", texto, flags=re.DOTALL)
+def _clean(lines: list[str]) -> str:
+    return "\n".join(line for line in lines if not line.lstrip().startswith(">")).strip()
 
-    # Frontmatter entre os dois primeiros '---'
-    frontmatter: dict = {}
-    corpo = texto
-    m = re.match(r"\s*---\n(.*?)\n---\n(.*)", texto, flags=re.DOTALL)
-    if m:
-        frontmatter = _parse_frontmatter(m.group(1))
-        corpo = m.group(2)
 
-    # Quebra o corpo em seções de nível 1 ('# ...')
-    secoes_raw: list[tuple[str, list[str]]] = []
-    atual: tuple[str, list[str]] | None = None
-    for linha in corpo.split("\n"):
-        if linha.startswith("# "):
-            atual = (linha[2:].strip(), [])
-            secoes_raw.append(atual)
-        elif atual is not None:
-            atual[1].append(linha)
+def _subsections(lines: list[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    current: str | None = None
+    buffer: list[str] = []
+    for line in lines:
+        if line.startswith("## "):
+            if current is not None:
+                result[current] = _clean(buffer)
+            current, buffer = line[3:].strip().casefold(), []
+        elif current is not None:
+            buffer.append(line)
+    if current is not None:
+        result[current] = _clean(buffer)
+    return result
 
-    secoes: dict = {}
-    for titulo, linhas in secoes_raw:
-        canon = _canonical(titulo)
-        if not canon:
-            continue
-        subs = _split_subsections(linhas)
-        secoes[canon] = {"subs": subs, "_text": _clean_block(linhas)}
 
-    return {"frontmatter": frontmatter, "secoes": secoes}
+def _parse(text: str) -> dict:
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    frontmatter: dict[str, str] = {}
+    body = text
+    match = re.match(r"\s*---\n(.*?)\n---\n(.*)", text, flags=re.DOTALL)
+    if match:
+        frontmatter, body = _parse_frontmatter(match.group(1)), match.group(2)
+    sections: dict[str, dict[str, object]] = {}
+    title: str | None = None
+    lines: list[str] = []
+
+    def store() -> None:
+        if title is None:
+            return
+        canonical = next((value for needle, value in _SECTION_KEYS if needle in title.casefold()), None)
+        # Seções desconhecidas e antigas regras técnicas são ignoradas: elas não
+        # entram em nenhum prompt protegido.
+        if canonical:
+            sections[canonical] = {"subs": _subsections(lines), "_text": _clean(lines)}
+
+    for line in body.splitlines():
+        if line.startswith("# "):
+            store()
+            title, lines = line[2:].strip(), []
+        elif title is not None:
+            lines.append(line)
+    store()
+    return {"frontmatter": frontmatter, "secoes": sections}
+
+
+def _validate_structure(data: dict) -> None:
+    sections = data.get("secoes", {})
+    required = {"perfil", "mensagens", "tom", "repertorio"}
+    missing = required - set(sections)
+    if missing:
+        raise ValueError(f"seções editáveis ausentes: {sorted(missing)}")
+    required_repertoire = {"generos", "decadas", "artistas", "inclusoes", "exclusoes"}
+    missing_repertoire = required_repertoire - set(sections["repertorio"]["subs"])
+    if missing_repertoire:
+        raise ValueError(f"campos de repertório ausentes: {sorted(missing_repertoire)}")
+    for field in ("generos", "decadas"):
+        if not str(sections["repertorio"]["subs"][field]).strip():
+            raise ValueError(f"campo de repertório vazio: '{field}'")
+    required_messages = set(_MSG_SLUG.values()) | {"pilula_prefixo"}
+    missing_messages = required_messages - set(sections["mensagens"]["subs"])
+    if missing_messages:
+        raise ValueError(f"mensagens obrigatórias ausentes: {sorted(missing_messages)}")
 
 
 def _load() -> dict:
-    """Relê o perfil externo se mudou, com fallback para a última versão válida.
-
-    ``ASSISTANT_PROFILE_PATH`` é opcional. Em ``legacy`` o arquivo empacotado
-    continua sendo suficiente; um perfil externo só passa a ser lido quando
-    existir no caminho configurado.
-    """
+    """Hot reload com retenção da última versão de perfil válida."""
     configured = os.getenv("ASSISTANT_PROFILE_PATH", "").strip()
     candidate = Path(configured) if configured else _MD_PATH
     if not candidate.is_file():
         candidate = _MD_PATH
     try:
         mtime = candidate.stat().st_mtime
-    except OSError as e:
+    except OSError as error:
         if _cache["data"] is not None:
             return _cache["data"]
-        raise RuntimeError(f"luzia.md não encontrado: {e}") from e
-
+        raise RuntimeError(f"perfil da assistente não encontrado: {error}") from error
     if mtime != _cache["mtime"] or candidate != _cache["path"] or _cache["data"] is None:
         try:
             data = _parse(candidate.read_text(encoding="utf-8"))
             _validate_structure(data)
-            _cache["data"] = data
-            _cache["mtime"] = mtime
-            _cache["path"] = candidate
-        except Exception as e:  # parse quebrado → mantém último bom, loga
+            _cache.update(data=data, mtime=mtime, path=candidate)
+        except Exception as error:
             if _cache["data"] is not None:
-                print(f"[LUZIA] Falha ao reler perfil ({e}); mantendo versão anterior.")
+                print(f"[LUZIA] Perfil inválido ({error}); mantendo última versão válida.")
                 return _cache["data"]
             if candidate != _MD_PATH:
                 data = _parse(_MD_PATH.read_text(encoding="utf-8"))
                 _validate_structure(data)
                 _cache.update(data=data, mtime=_MD_PATH.stat().st_mtime, path=_MD_PATH)
-                return data
-            raise
+            else:
+                raise
     return _cache["data"]
 
 
-def _validate_structure(data: dict) -> None:
-    """Validação mínima de runtime; regras críticas continuam protegidas no código."""
-    required = {"mensagens", "tom", "regras_duras", "composer", "curador", "repertorio", "classificador"}
-    missing = required - set(data.get("secoes", {}))
-    if missing:
-        raise ValueError(f"seções obrigatórias ausentes: {sorted(missing)}")
-    messages = data["secoes"].get("mensagens", {}).get("subs", {})
-    required_messages = {"sucesso", "saudacao", "producao_ativado", "cooldown", "nao_repertorio", "nao_id", "confirmacao", "pilula_prefixo"}
-    missing_messages = required_messages - set(messages)
-    if missing_messages:
-        raise ValueError(f"mensagens obrigatórias ausentes: {sorted(missing_messages)}")
-
-
-# ---------------------------------------------------------------------------
-# Acessos internos
-# ---------------------------------------------------------------------------
-
 def _msg(slug: str) -> str:
-    d = _load()
-    try:
-        return d["secoes"]["mensagens"]["subs"][slug]
-    except KeyError as e:
-        raise AttributeError(f"Mensagem '{slug}' ausente em luzia.md") from e
+    return str(_load()["secoes"]["mensagens"]["subs"][slug])
 
 
-def _frontmatter(chave: str, default: str = "") -> str:
-    return _load()["frontmatter"].get(chave, default)
+def _frontmatter(key: str, default: str = "") -> str:
+    return str(_load()["frontmatter"].get(key, default))
 
 
-# ---------------------------------------------------------------------------
-# API pública
-# ---------------------------------------------------------------------------
+def repertoire_configuration() -> dict[str, str]:
+    """Configuração declarativa consumida pelo verificador determinístico."""
+    subs = _load()["secoes"]["repertorio"]["subs"]
+    return {key: str(subs[key]) for key in ("generos", "decadas", "artistas", "inclusoes", "exclusoes")}
+
 
 def build_system_prompt() -> str:
-    """System prompt do classificador (intelligence.py). Reproduz o texto
-    histórico: substitui [[nome_radio]], [[genero_aceito]] e [[restricao_ano]]."""
-    d = _load()
-    meta = d["frontmatter"]
-    template = d["secoes"]["classificador"]["_text"]
-    genero = d["secoes"]["repertorio"]["_text"]
-    ano = meta.get("ano_maximo", "sem_restricao")
-    restricao = (
-        ""
-        if ano == "sem_restricao"
-        else f"Músicas lançadas após {ano} NÃO se qualificam para a programação desta rádio.\n"
-    )
+    """Prompt legado técnico interno; o perfil externo entra só como dados."""
+    profile = _load()
     return (
-        template
-        .replace("[[nome_radio]]", meta.get("nome_radio", ""))
-        .replace("[[genero_aceito]]", genero)
-        .replace("[[restricao_ano]]", restricao)
-    ).strip()
+        f"{_LEGACY_CLASSIFIER_TECHNICAL_PROMPT}\n\nRádio: {_frontmatter('nome_radio')}.\n"
+        f"Perfil editorial configurado:\n{profile['secoes']['repertorio']['_text']}"
+    )
+
+
+def router_technical_prompt() -> str:
+    """Contrato protegido do Router conversacional, independente do Markdown."""
+    return _ROUTER_TECHNICAL_PROMPT
 
 
 def diretrizes_luzia() -> str:
-    """Tom + regras duras concatenados — base do system prompt das mensagens
-    geradas pela LuzIA (composer e curador contextual)."""
-    d = _load()["secoes"]
-    tom = d.get("tom", {}).get("_text", "")
-    regras = d.get("regras_duras", {}).get("_text", "")
-    return f"{tom}\n\n{regras}".strip()
+    return f"{_load()['secoes']['tom']['_text']}\n\n{_COMPOSER_GUARDRAILS}".strip()
 
 
 def instrucao_composer(situacao: str) -> str:
-    """Instrução específica de redação para uma situação de recusa."""
-    d = _load()
-    try:
-        return d["secoes"]["composer"]["subs"][situacao]
-    except KeyError as e:
-        raise KeyError(f"Situação de composer desconhecida: '{situacao}'") from e
+    if situacao not in SITUACOES_COMPOSER:
+        raise KeyError(f"Situação de composer desconhecida: '{situacao}'")
+    examples = _load()["secoes"].get("exemplos", {}).get("subs", {})
+    return str(examples.get(situacao, "Use o tom e as mensagens fixas configurados."))
 
 
 def instrucao_curador_contexto() -> str:
-    """Instrução de como personalizar a pílula com o contexto do ouvinte."""
-    return _load()["secoes"]["curador"]["_text"]
+    examples = _load()["secoes"].get("exemplos", {}).get("subs", {})
+    return f"{_CURATOR_GUARDRAILS}\n{examples.get('curador', '')}".strip()
 
 
 def __getattr__(name: str):
-    """PEP 562: resolve MSG_*, NOME_RADIO, GENERO_ACEITO, ANO_MAXIMO sob demanda
-    (garante hot-reload — cada acesso passa por _load())."""
     if name in _MSG_SLUG:
         return _msg(_MSG_SLUG[name])
     if name == "MSG_PILULA_PREFIXO":
-        # O "\n\n" é estrutural (separa o prefixo do texto da curiosidade).
         return _msg("pilula_prefixo") + "\n\n"
     if name == "NOME_RADIO":
         return _frontmatter("nome_radio")
     if name == "ANO_MAXIMO":
         return _frontmatter("ano_maximo", "sem_restricao")
     if name == "GENERO_ACEITO":
-        return _load()["secoes"]["repertorio"]["_text"]
+        return repertoire_configuration()["generos"]
     raise AttributeError(f"module 'core.luzia' has no attribute '{name}'")
