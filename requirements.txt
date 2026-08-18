@@ -9,7 +9,12 @@ pydub~=0.25
 audioop-lts~=0.2  # compatibilidade do pydub com Python 3.13+
 
 # === Download e conversão ===
-yt-dlp>=2025.1  # Atualizado para a versão mais recente durante o build da imagem
+# [default] traz o yt-dlp-ejs e [deno] o runtime JS: sem eles o extrator não resolve
+# o desafio do player do YouTube e cai em clientes que respondem HTTP 403.
+yt-dlp[default,deno]>=2025.1  # Atualizado para a versão mais recente durante o build da imagem
+# Provedor de PO Token: o YouTube exige o token na requisição de mídia (GVS).
+# Conversa com o serviço bgutil-pot definido no docker-compose.
+bgutil-ytdlp-pot-provider~=1.3
 
 # === Servidor webhook ===
 fastapi~=0.131

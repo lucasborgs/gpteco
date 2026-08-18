@@ -72,6 +72,10 @@ services:
       # CURRENT_SONG_DIR do .env é o path Windows (usado como volume source acima).
       # O container precisa ver o path interno fixo onde o volume foi montado.
       CURRENT_SONG_DIR: /app/workspace/current_song
+      # Extração do YouTube — trocáveis pelo .env sem rebuild quando um cliente cair
+      POT_PROVIDER_URL: ${POT_PROVIDER_URL:-http://bgutil-pot:4416}
+      YT_PLAYER_CLIENT: ${YT_PLAYER_CLIENT:-tv_simply}
+      PYTHONUNBUFFERED: "1"
 
     volumes:
       # Código-fonte — bind mount: mudanças em .py requerem apenas restart
@@ -89,7 +93,18 @@ services:
 
     depends_on:
       - waha
+      - bgutil-pot
 
+    networks:
+      - agente_net
+
+  # --- Provedor de PO Token (downloads do YouTube) ---
+  # O YouTube exige um PO Token na requisição de mídia. Sem este serviço o
+  # yt-dlp não consegue baixar nada e todo pedido novo vira erro_tecnico.
+  bgutil-pot:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-pot
+    restart: unless-stopped
     networks:
       - agente_net
 

@@ -345,3 +345,34 @@ def test_downloader_remove_temp_se_registro_falha(tmp_path: Path) -> None:
             downloader.baixar("artista", "musica")
 
     assert not baixado.exists()
+
+
+def test_downloader_passa_player_client_e_pot_provider_ao_yt_dlp(tmp_path: Path) -> None:
+    """Sem estes extractor_args o YouTube recusa a mídia com HTTP 403."""
+    downloader = _import_downloader_with_fake_dependencies()
+    opcoes_recebidas: dict = {}
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            opcoes_recebidas.update(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, alvo: str, download: bool):
+            if not download:
+                return {"entries": [{"id": "disponivel", "duration": 200}]}
+            (tmp_path / "disponivel.webm").write_bytes(b"audio")
+            return {"ext": "webm", "title": "Resultado disponível"}
+
+    with patch.object(downloader, "TEMP_DIR", str(tmp_path)), patch.object(
+        downloader.yt_dlp, "YoutubeDL", FakeYoutubeDL
+    ):
+        downloader._baixar_youtube("artista musica official audio")
+
+    extractor_args = opcoes_recebidas["extractor_args"]
+    assert extractor_args["youtube"]["player_client"] == [downloader.YT_PLAYER_CLIENT]
+    assert extractor_args["youtubepot-bgutilhttp"]["base_url"] == [downloader.POT_PROVIDER_URL]
