@@ -46,6 +46,14 @@ MAX_DURACAO_S: int = 900                      # 15 min — acima disso não é a
 MAX_FILESIZE_BYTES: int = 30 * 1024 * 1024    # 30 MB — rede de segurança no próprio download
 SEARCH_N: int = 5                             # nº de resultados avaliados na busca
 
+# Extração do YouTube: os clientes padrão do yt-dlp (android_vr, web_safari) estão
+# inutilizáveis — o primeiro recebe HTTP 403 na mídia e o segundo só entrega SABR.
+# tv_simply devolve URLs baixáveis, desde que acompanhado de um PO Token válido.
+# Ambos são configuráveis por .env: quando o YouTube bloquear tv_simply, basta
+# trocar a variável e reiniciar, sem rebuild da imagem.
+YT_PLAYER_CLIENT: str = os.getenv("YT_PLAYER_CLIENT", "tv_simply")
+POT_PROVIDER_URL: str = os.getenv("POT_PROVIDER_URL", "http://bgutil-pot:4416")
+
 
 class _FalhaResultadosBloqueados(RuntimeError):
     """Indica que todos os candidatos falharam por indisponibilidade prevista."""
@@ -114,6 +122,10 @@ def _baixar_youtube(query: str) -> str:
         "socket_timeout": 30,                # segundos — evita hang indefinido
         "nopart": True,                      # evita .part → rename (falha em volumes Windows)
         "max_filesize": MAX_FILESIZE_BYTES,  # aborta o download se o arquivo passar do teto
+        "extractor_args": {
+            "youtube": {"player_client": [YT_PLAYER_CLIENT]},
+            "youtubepot-bgutilhttp": {"base_url": [POT_PROVIDER_URL]},
+        },
     }
 
     print(f"[DOWNLOADER] Buscando no YouTube: '{query}'")
