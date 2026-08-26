@@ -73,6 +73,11 @@ services:
       TEMP_DIR: /app/workspace/temp
       # Pasta do CurrentSong.txt dentro do container (o host é montado via volume abaixo)
       CURRENT_SONG_DIR: /app/workspace/current_song
+      # Extração do YouTube — trocáveis pelo .env sem rebuild quando um cliente cair
+      POT_PROVIDER_URL: ${POT_PROVIDER_URL:-http://bgutil-pot:4416}
+      YT_PLAYER_CLIENT: ${YT_PLAYER_CLIENT:-tv_simply}
+      # Sem isto o stdout fica em buffer de bloco e o log some se o container morrer
+      PYTHONUNBUFFERED: "1"
 
     volumes:
       # Named volume — Docker gerencia internamente, sem caminho Windows
@@ -90,7 +95,18 @@ services:
 
     depends_on:
       - waha
+      - bgutil-pot
 
+    networks:
+      - agente_net
+
+  # --- Provedor de PO Token (downloads do YouTube) ---
+  # O YouTube exige um PO Token na requisição de mídia. Sem este serviço o
+  # yt-dlp não consegue baixar nada e todo pedido novo vira erro_tecnico.
+  bgutil-pot:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-pot
+    restart: unless-stopped
     networks:
       - agente_net
 
