@@ -33,7 +33,7 @@ import shutil
 import time
 from pathlib import Path
 
-from core import audio_mixer, composer, config_radio, database, downloader, intelligence, queue_watcher, stt
+from core import audio_mixer, composer, config_radio, database, downloader, eleitoral, intelligence, luzia, queue_watcher, stt
 
 # Diretórios (configuráveis via .env)
 TEMP_DIR: str = os.getenv(
@@ -90,6 +90,14 @@ def processar_pedido(
             texto = stt.transcrever(path_ogg)
             if not texto.strip():
                 return _resultado(False, None, "Não consegui entender o áudio. Pode reenviar ou mandar um texto com o nome da música?")
+
+            # Gate eleitoral — só se aplica a áudio: é a voz do ouvinte que
+            # seria sobreposta à música na Etapa 5 e iria ao ar. Roda antes do
+            # LLM e de qualquer outra etapa. Ver core/eleitoral.py.
+            if eleitoral.contem_candidato(texto):
+                database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="eleitoral")
+                return _resultado(False, None, luzia.MSG_ELEITORAL)
+
             if notificar:
                 notificar(f"Entendi: \"{texto}\"\n\nBuscando a música...")
         elif _is_retry:
@@ -109,6 +117,12 @@ def processar_pedido(
         if not metadados.is_pedido_musical:
             print("[PIPELINE] Mensagem fora de escopo — enviando menu.")
             return _resultado(False, None, config_radio.MSG_SAUDACAO, mostrar_menu=True)
+
+        # Música de conteúdo político vetada por título — vale para qualquer
+        # canal (áudio ou texto). Ver core/eleitoral.py.
+        if eleitoral.eh_musica_proibida(metadados.musica):
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="eleitoral", genero=metadados.genero)
+            return _resultado(False, None, luzia.MSG_ELEITORAL)
 
         if not metadados.is_apropriado:
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="inapropriado", genero=metadados.genero)

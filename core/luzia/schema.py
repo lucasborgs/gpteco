@@ -26,6 +26,7 @@ _MENSAGENS_OBRIGATORIAS = {
     "encerramento": set(),
     "cooldown": set(),
     "inapropriado": set(),
+    "eleitoral": set(),
     "nao_repertorio": {"musica", "artista"},
     "nao_id": set(),
     "confirmacao": {"musica", "artista"},

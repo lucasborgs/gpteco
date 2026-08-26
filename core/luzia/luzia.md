@@ -55,6 +55,11 @@ Não foi possível atender esse pedido. Mande uma mensagem respeitosa.
 
 Luz FM, sempre ligada em você! 💡
 
+## eleitoral
+Não podemos atender esse pedido no momento.
+
+Luz FM, sempre ligada em você! 💡
+
 ## nao_repertorio
 Infelizmente '{musica}' de {artista} não faz parte do repertório da Luz FM.
 

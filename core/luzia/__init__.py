@@ -50,6 +50,7 @@ _MSG_SLUG = {
     "MSG_SUCESSO": "sucesso",
     "MSG_COOLDOWN": "cooldown",
     "MSG_INAPROPRIADO": "inapropriado",
+    "MSG_ELEITORAL": "eleitoral",
     "MSG_NAO_REPERTORIO": "nao_repertorio",
     "MSG_NAO_ID": "nao_id",
     "MSG_CONFIRMACAO": "confirmacao",
