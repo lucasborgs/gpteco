@@ -17,6 +17,9 @@ const MOTIVO_CONFIG: Record<string, { label: string; color: string }> = {
   nao_identificado: { label: 'Não identificado', color: '#9CA3AF' },
   inapropriado: { label: 'Inapropriado', color: '#E53935' },
   erro_tecnico: { label: 'Erro técnico', color: '#8B5CF6' },
+  apenas_voz: { label: 'Convite para áudio', color: '#0EA5E9' },
+  busca_ocupada: { label: 'Busca ocupada', color: '#92400E' },
+  eleitoral: { label: 'Bloqueio eleitoral', color: '#A21CAF' },
   desconhecido: { label: 'Outros', color: '#6B7280' },
 }
 

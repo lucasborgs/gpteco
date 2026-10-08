@@ -12,6 +12,9 @@ const MOTIVO_LABELS: Record<string, string> = {
   nao_identificado: 'Não identificado',
   inapropriado: 'Inapropriado',
   erro_tecnico: 'Erro técnico',
+  apenas_voz: 'Convite para áudio',
+  busca_ocupada: 'Busca ocupada',
+  eleitoral: 'Bloqueio eleitoral',
   desconhecido: 'Outros',
 }
 
