@@ -86,6 +86,7 @@ def init_db() -> None:
 
             cur.execute("ALTER TABLE dim_pedidos ADD COLUMN IF NOT EXISTS telefone VARCHAR;")
             cur.execute("ALTER TABLE dim_pedidos ADD COLUMN IF NOT EXISTS genero VARCHAR;")
+            cur.execute("ALTER TABLE dim_pedidos ADD COLUMN IF NOT EXISTS canal VARCHAR;")
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS dim_pendencias (
@@ -255,17 +256,25 @@ def registrar_pedido(
     sucesso: bool = True,
     motivo_rejeicao: str | None = None,
     genero: str = "",
+    canal: str = "",
 ) -> None:
     """
     Registra um pedido em dim_pedidos (aceito ou rejeitado).
+
+    `canal` identifica se o pedido chegou por voz (áudio) ou texto — é a base
+    do fold do canal obrigatório de voz (`core/canal_voz.py`), que lê esse
+    valor de volta via `pedidos_atendidos_por_canal`. Default `""` só existe
+    para não quebrar chamadas que ainda não informam o canal; `""` é tratado
+    pelo fold exatamente como `NULL` (linha antiga, sem coluna preenchida):
+    nenhum dos dois conta como texto nem como voz.
     """
     con = _get_connection()
     try:
         with con.cursor() as cur:
             cur.execute("""
                 INSERT INTO dim_pedidos
-                    (numero, artista, musica, timestamp_pedido, sucesso, motivo_rejeicao, genero)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (numero, artista, musica, timestamp_pedido, sucesso, motivo_rejeicao, genero, canal)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """, [
                 numero,
                 artista.strip() if artista else "",
@@ -274,10 +283,42 @@ def registrar_pedido(
                 sucesso,
                 motivo_rejeicao,
                 genero.strip() if genero else "",
+                canal.strip() if canal else "",
             ])
         con.commit()
         status = "aceito" if sucesso else f"rejeitado ({motivo_rejeicao})"
         print(f"[DB] Pedido {status}: {numero} → '{musica}' - '{artista}'")
+    finally:
+        con.close()
+
+
+def pedidos_atendidos_por_canal(numero: str, historico_dias: int) -> list[tuple[datetime, str]]:
+    """
+    Retorna (timestamp_pedido, canal) dos pedidos **atendidos**
+    (`sucesso = TRUE`) de `numero`, do mais antigo para o mais recente,
+    limitado aos últimos `historico_dias` dias. Mesma base de "atendido" que
+    `verificar_cooldown` usa.
+
+    `canal` pode vir `None` para pedidos registrados antes desta coluna
+    existir (sem backfill) — quem consome esta lista (`core/canal_voz.py`)
+    trata `None` e `""` como "nenhum canal", nunca como texto ou voz, para que
+    nenhum ouvinte seja bloqueado retroativamente por histórico anterior ao
+    deploy desta coluna.
+    """
+    con = _get_connection()
+    try:
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT timestamp_pedido, canal
+                FROM dim_pedidos
+                WHERE numero = %s
+                  AND sucesso = TRUE
+                  AND timestamp_pedido >= %s
+                ORDER BY timestamp_pedido ASC
+            """, [numero, datetime.now() - timedelta(days=historico_dias)])
+            rows = cur.fetchall()
+
+        return [(r[0], r[1]) for r in rows]
     finally:
         con.close()
 
