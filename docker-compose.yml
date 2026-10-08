@@ -76,6 +76,9 @@ services:
       POT_PROVIDER_URL: ${POT_PROVIDER_URL:-http://bgutil-pot:4416}
       YT_PLAYER_CLIENT: ${YT_PLAYER_CLIENT:-tv_simply}
       PYTHONUNBUFFERED: "1"
+      # Perfil editável da assistente — em dev normalmente aponta pro próprio
+      # luzia.md do repo (o bind mount abaixo), mas pode ser trocado via .env.
+      ASSISTANT_PROFILE_PATH: /app/config/assistente.md
 
     volumes:
       # Código-fonte — bind mount: mudanças em .py requerem apenas restart
@@ -90,6 +93,9 @@ services:
       - ${DATA_DIR:-./data}:/app/data
       # Pasta onde o ZaraRadio grava CurrentSong.txt (ex: C:\Users\user)
       - ${CURRENT_SONG_DIR:-./workspace/current_song}:/app/workspace/current_song
+      # Perfil da assistente — editável sem restart (hot-reload por mtime em core/luzia).
+      # Defina ASSISTANT_PROFILE_FILE no .env para apontar para outro arquivo.
+      - ${ASSISTANT_PROFILE_FILE:-./core/luzia/luzia.md}:/app/config/assistente.md:ro
 
     depends_on:
       - waha

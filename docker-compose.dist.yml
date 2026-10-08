@@ -54,7 +54,7 @@ services:
 
   # --- Servidor Python (FastAPI + pipeline) ---
   servidor:
-    image: iamlucb/gpteco:latest   # imagem pré-compilada do Docker Hub
+    image: ${GPTECO_IMAGE:-iamlucb/gpteco:latest}   # imagem pré-compilada do Docker Hub
     container_name: servidor
     restart: unless-stopped
     init: true                     # evita processos zumbi (ffmpeg/yt-dlp)
@@ -78,6 +78,9 @@ services:
       YT_PLAYER_CLIENT: ${YT_PLAYER_CLIENT:-tv_simply}
       # Sem isto o stdout fica em buffer de bloco e o log some se o container morrer
       PYTHONUNBUFFERED: "1"
+      # Perfil editável da assistente — a imagem já sobe com um padrão embutido
+      # (Dockerfile); este caminho é onde o bind mount abaixo o sobrescreve.
+      ASSISTANT_PROFILE_PATH: /app/config/assistente.md
 
     volumes:
       # Named volume — Docker gerencia internamente, sem caminho Windows
@@ -92,6 +95,10 @@ services:
       - type: bind
         source: ${CURRENT_SONG_DIR:-./workspace/current_song}
         target: /app/workspace/current_song
+      # Perfil da assistente (tom, mensagens, repertório) — editável no cliente
+      # sem rebuild. Defina ASSISTANT_PROFILE_FILE no .env se quiser apontar
+      # para outro arquivo; o padrão é o perfil versionado no repositório.
+      - ${ASSISTANT_PROFILE_FILE:-./core/luzia/luzia.md}:/app/config/assistente.md:ro
 
     depends_on:
       - waha

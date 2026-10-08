@@ -25,14 +25,18 @@ API pública:
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
 _MD_PATH = Path(__file__).parent / "luzia.md"
 
-# Cache com invalidação por mtime + memória do último parse válido (resiliência:
-# se alguém salvar um .md quebrado em produção, seguimos servindo o último bom).
-_cache: dict = {"mtime": 0.0, "data": None}
+# Cache com invalidação por mtime + caminho + memória do último parse válido
+# (resiliência: se alguém salvar um .md quebrado em produção, seguimos
+# servindo o último bom). O caminho entra no cache porque ASSISTANT_PROFILE_PATH
+# pode mudar em runtime (ex.: testes) e um mtime igual por coincidência não
+# bastaria para detectar a troca.
+_cache: dict = {"mtime": 0.0, "path": None, "data": None}
 
 # Mapeia título de seção (por palavra-chave, tolerante a emoji/acento) → chave canônica
 _SECTION_KEYS = [
@@ -148,24 +152,44 @@ def _parse(texto: str) -> dict:
 
 
 def _load() -> dict:
-    """Relê luzia.md se o arquivo mudou; senão devolve o cache."""
+    """Relê o perfil se o arquivo ou o caminho mudou; senão devolve o cache.
+
+    O caminho é resolvido por ASSISTANT_PROFILE_PATH (perfil do cliente,
+    editável sem rebuild via bind mount); se a variável estiver vazia ou
+    apontar para um arquivo que não existe, usa o luzia.md embutido no
+    pacote (_MD_PATH).
+    """
+    configurado = os.getenv("ASSISTANT_PROFILE_PATH", "").strip()
+    caminho = Path(configurado) if configurado else _MD_PATH
+    if not caminho.is_file():
+        caminho = _MD_PATH
+
     try:
-        mtime = _MD_PATH.stat().st_mtime
+        mtime = caminho.stat().st_mtime
     except OSError as e:
         if _cache["data"] is not None:
             return _cache["data"]
         raise RuntimeError(f"luzia.md não encontrado: {e}") from e
 
-    if mtime != _cache["mtime"] or _cache["data"] is None:
+    if mtime != _cache["mtime"] or caminho != _cache["path"] or _cache["data"] is None:
         try:
-            data = _parse(_MD_PATH.read_text(encoding="utf-8"))
+            data = _parse(caminho.read_text(encoding="utf-8"))
             _cache["data"] = data
             _cache["mtime"] = mtime
+            _cache["path"] = caminho
         except Exception as e:  # parse quebrado → mantém último bom, loga
             if _cache["data"] is not None:
-                print(f"[LUZIA] Falha ao reler luzia.md ({e}); mantendo versão anterior.")
+                print(f"[LUZIA] Falha ao reler perfil ({e}); mantendo versão anterior.")
                 return _cache["data"]
-            raise
+            if caminho != _MD_PATH:
+                # Perfil do cliente nunca carregou com sucesso: cai no embutido
+                # em vez de derrubar o servidor na inicialização.
+                data = _parse(_MD_PATH.read_text(encoding="utf-8"))
+                _cache["data"] = data
+                _cache["mtime"] = _MD_PATH.stat().st_mtime
+                _cache["path"] = _MD_PATH
+            else:
+                raise
     return _cache["data"]
 
 
@@ -183,6 +207,19 @@ def _msg(slug: str) -> str:
 
 def _frontmatter(chave: str, default: str = "") -> str:
     return _load()["frontmatter"].get(chave, default)
+
+
+def mensagem(slug: str, default: str = "") -> str:
+    """Mensagem do perfil por slug; devolve `default` se o slug não existir.
+
+    Diferente de _msg (usado pelas constantes MSG_*, que são estritas e devem
+    sempre existir no perfil), esta função é tolerante: serve slugs novos que
+    podem ainda não existir no assistente.md de um cliente, sem levantar
+    AttributeError e sem derrubar o gate que a chamou. Quem usa `mensagem()`
+    define o próprio texto de fallback como constante no módulo chamador.
+    """
+    subs = _load()["secoes"].get("mensagens", {}).get("subs", {})
+    return subs.get(slug, default)
 
 
 # ---------------------------------------------------------------------------

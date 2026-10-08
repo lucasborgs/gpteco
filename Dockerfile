@@ -32,6 +32,10 @@ COPY . .
 # --- Diretórios de trabalho (fallback; em produção são montados como volumes) ---
 RUN mkdir -p workspace/musicas/acervo_limpo workspace/musicas/fila_zara workspace/temp
 
+# --- Perfil padrão da assistente (fallback; em produção o cliente monta o
+# próprio assistente.md por cima via bind mount em ASSISTANT_PROFILE_PATH) ---
+RUN mkdir -p /app/config && cp core/luzia/luzia.md /app/config/assistente.md
+
 # Porta do servidor webhook
 EXPOSE 8002
 
