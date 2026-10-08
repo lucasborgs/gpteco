@@ -33,7 +33,7 @@ import shutil
 import time
 from pathlib import Path
 
-from core import audio_mixer, composer, config_radio, database, downloader, eleitoral, intelligence, luzia, queue_watcher, stt
+from core import audio_mixer, composer, config_radio, database, downloader, eleitoral, intelligence, luzia, queue_watcher, repertorio, stt
 
 # Diretórios (configuráveis via .env)
 TEMP_DIR: str = os.getenv(
@@ -155,10 +155,12 @@ def processar_pedido(
             database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado")
             return _resultado(False, None, composer.compor("nao_id", {}, texto), aguardando_pedido=True)
 
-        if not metadados.is_flashback:
+        if not metadados.is_flashback and not repertorio.genero_liberado(metadados.genero):
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="nao_flashback", genero=metadados.genero)
             msg = composer.compor("nao_repertorio", {"musica": metadados.musica, "artista": metadados.artista, "genero": metadados.genero}, texto)
             return _resultado(False, None, msg, aguardando_pedido=True)
+        if not metadados.is_flashback:
+            print(f"[PIPELINE] Gênero liberado por configuração: '{metadados.genero}' (is_flashback=false)")
 
         # --- Etapa 3: Busca no Acervo Local ---
         _log_etapa(3, "Busca no acervo local")

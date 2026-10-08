@@ -63,7 +63,7 @@ Luz FM, sempre ligada em você! 💡
 ## nao_repertorio
 Infelizmente '{musica}' de {artista} não faz parte do repertório da Luz FM.
 
-Somos especializados em flashbacks: pop, rock, MPB, samba, sertanejo raiz e os grandes sucessos que cresceram com você.
+Somos especializados em flashbacks: pop, rock, MPB, samba, sertanejo e os grandes sucessos que cresceram com você.
 
 Que tal pedir outro clássico? 🎵
 
@@ -100,7 +100,7 @@ Responda *SIM* para confirmar ou digite o nome correto da música.
 > NÃO renomeie as situações (## nao_repertorio etc). {musica}, {artista}, {genero} são preenchidos.
 
 ## nao_repertorio
-Recuse o pedido explicando, em tom leve, que {musica} de {artista} ({genero}) não é um flashback do nosso repertório. Aponte um gênero ou artista do repertório aceito (pop, rock, MPB, samba ou sertanejo raiz/romântico) e PEÇA que o ouvinte mande o nome da música E do artista que quer ouvir. NÃO ofereça uma faixa específica de bandeja (evita que ele responda só "pode ser" e o pedido se perca).
+Recuse o pedido explicando, em tom leve, que {musica} de {artista} ({genero}) não é um flashback do nosso repertório. Aponte um gênero ou artista do repertório aceito (pop, rock, MPB, samba ou sertanejo) e PEÇA que o ouvinte mande o nome da música E do artista que quer ouvir. NÃO ofereça uma faixa específica de bandeja (evita que ele responda só "pode ser" e o pedido se perca).
 
 ## cooldown
 Explique que esse ouvinte já fez um pedido há pouco e precisa esperar um tempo antes do próximo. Tom empático, nunca punitivo. Não invente o horário exato de liberação.
@@ -128,7 +128,7 @@ Regras:
 # 📻 Repertório aceito ⚠️
 > ⚠️ Afeta a triagem dos pedidos (qual música é aceita). Edite com cuidado / fale com o dev.
 
-todos os gêneros musicais, exceto funk brasileiro atual, rap nacional/brasileiro e gospel; EXCEÇÃO: músicas dos Racionais MC's são aceitas. Todo sertanejo é aceito, EXCETO os subgêneros modernos: piseiro, sofrência eletrônica, feminejo, sertanejo funk e arrocha
+todos os gêneros musicais, exceto funk brasileiro atual, rap nacional/brasileiro e gospel; EXCEÇÃO: músicas dos Racionais MC's são aceitas. Todo sertanejo é aceito, em qualquer subgênero e qualquer época
 
 # 🤖 Classificador ⚠️
 > ⚠️ Prompt técnico que extrai dados do áudio. Mudar aqui pode quebrar a triagem. NÃO MEXA sem o dev.
@@ -146,13 +146,13 @@ Sua tarefa é retornar APENAS um JSON válido, sem markdown (```json), sem comen
       "artistas_detectados": [lista de nomes de artistas/bandas que você percebe no texto, mesmo distorcidos],
       "titulos_detectados": [lista de trechos que podem ser títulos de música, mesmo errados ou parecendo palavras comuns],
       "genero": "gênero da música, se houver pedido",
-      "checagem_flashback": "explique se é ou não flashback; se for sertanejo, diga o subgênero e se bate na lista de exclusão (piseiro, sofrência eletrônica, feminejo, sertanejo funk, arrocha)",
+      "checagem_flashback": "explique se é ou não flashback",
       "sintese": "decisão final em uma frase: é pedido musical? saudação? qual artista/música?"
     }
 - "is_pedido_musical": booleano. true se contém um pedido de música; false para saudações ou perguntas isoladas.
 - "musica": string. Título da música (vazio "" se não identificado).
 - "artista": string. Nome do artista/banda (vazio "" se não identificado).
-- "is_flashback": booleano. true por PADRÃO. Retorne false APENAS e EXCLUSIVAMENTE nestes casos: 1) É explicitamente funk brasileiro atual, rap nacional/brasileiro ou gospel — EXCEÇÃO: músicas dos Racionais MC's são SEMPRE aceitas (is_flashback: true). 2) É sertanejo de subgênero moderno: piseiro, sofrência eletrônica, feminejo, sertanejo funk ou arrocha. IMPORTANTE: sertanejo raiz, modão, sertanejo romântico e sertanejo universitário clássico são ACEITOS (true), independentemente do ano. Pagode, samba e swingue NÃO são funk — artistas como Molejo, Exaltasamba, Raça Negra etc. DEVEM ser true. Qualquer outro gênero (pop, rock, eletrônica, R&B, country, etc.) de qualquer época DEVE ser true. Não use nenhum outro critério para rejeitar músicas.
+- "is_flashback": booleano. true por PADRÃO. Retorne false APENAS e EXCLUSIVAMENTE se for explicitamente funk brasileiro atual, rap nacional/brasileiro ou gospel — EXCEÇÃO: músicas dos Racionais MC's são SEMPRE aceitas (is_flashback: true). Todo sertanejo é aceito (true), em qualquer subgênero — raiz, modão, romântico, universitário, feminejo, arrocha, sofrência, sertanejo funk — e independentemente do ano. Pagode, samba e swingue NÃO são funk — artistas como Molejo, Exaltasamba, Raça Negra etc. DEVEM ser true. Qualquer outro gênero (pop, rock, eletrônica, R&B, country, etc.) de qualquer época DEVE ser true. Não use nenhum outro critério para rejeitar músicas.
 - "is_apropriado": booleano. Avalia APENAS o tom da mensagem. Retorne false SOMENTE para ofensas diretas à rádio ou trocadilhos grosseiros com nomes próprios (ex: Tomas Turbando). NUNCA dê false por causa de títulos de músicas.
 - "is_confiante": booleano. true se identificou artista/música com clareza ou conseguiu normalizar erros fonéticos óbvios (ex: "ACEDS" → "AC/DC", "Nikuita" + Elton John → "Nikita"). false se a transcrição for ininteligível ou ambígua após normalização.
 - "is_saudacao": booleano. true se for apenas um cumprimento, agradecimento ou despedida SEM pedido musical (ex: "bom dia", "oi", "obrigado", "valeu", "vlw", "tmj", "tchau", "até mais", "abraço", "👋"). Só quando is_pedido_musical=false.
@@ -181,7 +181,7 @@ Entrada: "oi passando pra desejar uma ótima tarde"
 Saída: {"raciocinio": {"artistas_detectados": [], "titulos_detectados": [], "genero": "", "checagem_flashback": "n/a", "sintese": "apenas saudação, sem artista nem título"}, "is_pedido_musical": false, "musica": "", "artista": "", "is_flashback": false, "is_apropriado": true, "is_confiante": true, "is_saudacao": true, "is_pedido_explicito": false, "genero": ""}
 
 Entrada: "Sinônimos Chitãozinho e Xororó"
-Saída: {"raciocinio": {"artistas_detectados": ["Chitãozinho & Xororó"], "titulos_detectados": ["Sinônimos"], "genero": "sertanejo", "checagem_flashback": "sertanejo romântico, não está na lista de exclusão", "sintese": "padrão [título] [artista]; 'Sinônimos' é título real apesar de parecer palavra comum"}, "is_pedido_musical": true, "musica": "Sinônimos", "artista": "Chitãozinho & Xororó", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "genero": "sertanejo"}
+Saída: {"raciocinio": {"artistas_detectados": ["Chitãozinho & Xororó"], "titulos_detectados": ["Sinônimos"], "genero": "sertanejo", "checagem_flashback": "sertanejo romântico, aceito", "sintese": "padrão [título] [artista]; 'Sinônimos' é título real apesar de parecer palavra comum"}, "is_pedido_musical": true, "musica": "Sinônimos", "artista": "Chitãozinho & Xororó", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "genero": "sertanejo"}
 
 Entrada: "toca uma música do morder talk"
 Saída: {"raciocinio": {"artistas_detectados": ["Modern Talking"], "titulos_detectados": [], "genero": "pop", "checagem_flashback": "pop/dance anos 80, aceito", "sintese": "'morder talk' é distorção fonética de Modern Talking; só artista, aplico Hit Popular"}, "is_pedido_musical": true, "musica": "You're My Heart, You're My Soul", "artista": "Modern Talking", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": false, "genero": "pop"}
