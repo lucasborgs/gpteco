@@ -38,6 +38,7 @@ def _import_pipeline_with_fake_dependencies(monkeypatch):
             "core.composer",
             "core.stt",
             "core.repertorio",
+            "core.canal_voz",
         ):
             sys.modules.pop(mod, None)
         return importlib.import_module("core.pipeline")
@@ -74,6 +75,7 @@ def test_sertanejo_moderno_e_aceito_mesmo_sem_flashback(monkeypatch):
 
     with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
+         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
          patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
          patch.object(pipeline.database, "registrar_pedido"), \
          patch.object(pipeline, "queue_watcher") as fake_queue, \
@@ -94,6 +96,7 @@ def test_genero_nao_liberado_sem_flashback_e_recusado(monkeypatch):
 
     with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
+         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
          patch.object(pipeline.database, "registrar_pedido", registrar):
         resultado = pipeline.processar_pedido("5511999999999", texto="toca Oceano do Djavan")
 
@@ -101,7 +104,7 @@ def test_genero_nao_liberado_sem_flashback_e_recusado(monkeypatch):
     assert resultado["aguardando_pedido"] is True
     registrar.assert_called_once_with(
         "5511999999999", "Djavan", "Oceano",
-        sucesso=False, motivo_rejeicao="nao_flashback", genero="gospel",
+        sucesso=False, motivo_rejeicao="nao_flashback", genero="gospel", canal="texto",
     )
 
 
@@ -122,7 +125,7 @@ def test_sertanejo_na_lista_eleitoral_precedencia(monkeypatch):
     assert resultado["mensagem"] == pipeline.luzia.MSG_ELEITORAL
     registrar.assert_called_once_with(
         "5511999999999", "Mateus & Cristiano", "Capitão do Povo",
-        sucesso=False, motivo_rejeicao="eleitoral", genero="Sertanejo",
+        sucesso=False, motivo_rejeicao="eleitoral", genero="Sertanejo", canal="texto",
     )
 
 
@@ -140,7 +143,7 @@ def test_sertanejo_inapropriado_e_recusado(monkeypatch):
     assert resultado["sucesso"] is False
     registrar.assert_called_once_with(
         "5511999999999", "Chitãozinho e Xororó", "Evidências",
-        sucesso=False, motivo_rejeicao="inapropriado", genero="sertanejo",
+        sucesso=False, motivo_rejeicao="inapropriado", genero="sertanejo", canal="texto",
     )
 
 
@@ -154,6 +157,7 @@ def test_racionais_mcs_fora_das_cinco_faixas_e_aceito(monkeypatch):
 
     with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
+         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
          patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
          patch.object(pipeline.database, "registrar_pedido"), \
          patch.object(pipeline, "queue_watcher") as fake_queue, \

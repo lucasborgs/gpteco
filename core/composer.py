@@ -67,6 +67,8 @@ _CANNED = {
     "inapropriado":   lambda c: luzia.MSG_INAPROPRIADO,
     "nao_id":         lambda c: luzia.MSG_NAO_ID,
     "confirmacao":    lambda c: luzia.MSG_CONFIRMACAO.format_map(_Safe(c)),
+    "apenas_voz":          lambda c: luzia.MSG_APENAS_VOZ,
+    "apenas_voz_retorno":  lambda c: luzia.MSG_APENAS_VOZ_RETORNO,
 }
 
 

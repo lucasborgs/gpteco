@@ -63,10 +63,15 @@ _MSG_SLUG = {
     "MSG_PRODUCAO_ATIVADO": "producao_ativado",
     "MSG_MENU_POS_SUCESSO": "menu_pos_sucesso",
     "MSG_ENCERRAMENTO": "encerramento",
+    "MSG_APENAS_VOZ": "apenas_voz",
+    "MSG_APENAS_VOZ_RETORNO": "apenas_voz_retorno",
 }
 
 # Situações de recusa esperadas (usadas pelo composer)
-SITUACOES_COMPOSER = ("nao_repertorio", "cooldown", "inapropriado", "nao_id", "confirmacao")
+SITUACOES_COMPOSER = (
+    "nao_repertorio", "cooldown", "inapropriado", "nao_id", "confirmacao",
+    "apenas_voz", "apenas_voz_retorno",
+)
 
 
 # ---------------------------------------------------------------------------

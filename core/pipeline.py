@@ -33,7 +33,7 @@ import shutil
 import time
 from pathlib import Path
 
-from core import audio_mixer, composer, config_radio, database, downloader, eleitoral, intelligence, luzia, queue_watcher, repertorio, stt
+from core import audio_mixer, canal_voz, composer, config_radio, database, downloader, eleitoral, intelligence, luzia, queue_watcher, repertorio, stt
 
 # Diretórios (configuráveis via .env)
 TEMP_DIR: str = os.getenv(
@@ -45,6 +45,14 @@ DISABLE_COOLDOWN: bool = os.getenv("DISABLE_COOLDOWN", "false").lower() == "true
 
 # Mensagem de erro técnico — não é configurável (não é mensagem da rádio)
 _MSG_ERRO = "Ocorreu um erro ao processar seu pedido. Tente novamente em breve."
+
+# Fallback de "busca_ocupada" (F0.4/B4) — usado só se o perfil ativo não tiver
+# o slug (ex.: assistente.md do cliente ainda não atualizado). O texto normal
+# vem de luzia.mensagem("busca_ocupada", ...), que lê core/luzia/luzia.md.
+_MSG_BUSCA_OCUPADA_FALLBACK = (
+    "Tá com muita gente buscando música aqui agora! Tenta de novo daqui a "
+    "uns minutinhos, por favor. 🎵"
+)
 
 
 def processar_pedido(
@@ -77,6 +85,13 @@ def processar_pedido(
     # O texto é a confirmação digitada pelo ouvinte; o áudio é usado só para a mixagem.
     _is_retry = bool(path_ogg and texto)
 
+    # Canal do pedido (item C, seção 8.1) — mesmo critério do filtro eleitoral:
+    # há voz do ouvinte quando existe path_ogg (vai à mixagem e ao ar), inclusive
+    # no modo retry. A pendência "__texto__" chega sem path_ogg e é "texto".
+    # Calculado antes do try/except: é a única variável do bloco de erro que
+    # não depende de `metadados` (ver o except genérico, ao final da função).
+    canal = "voz" if path_ogg else "texto"
+
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     _log_separador(f"Novo pedido de {numero}")
@@ -95,7 +110,7 @@ def processar_pedido(
             # seria sobreposta à música na Etapa 5 e iria ao ar. Roda antes do
             # LLM e de qualquer outra etapa. Ver core/eleitoral.py.
             if eleitoral.contem_candidato(texto):
-                database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="eleitoral")
+                database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="eleitoral", canal=canal)
                 return _resultado(False, None, luzia.MSG_ELEITORAL)
 
             if notificar:
@@ -121,26 +136,42 @@ def processar_pedido(
         # Música de conteúdo político vetada por título — vale para qualquer
         # canal (áudio ou texto). Ver core/eleitoral.py.
         if eleitoral.eh_musica_proibida(metadados.musica, metadados.artista):
-            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="eleitoral", genero=metadados.genero)
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="eleitoral", genero=metadados.genero, canal=canal)
             return _resultado(False, None, luzia.MSG_ELEITORAL)
 
         if not metadados.is_apropriado:
-            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="inapropriado", genero=metadados.genero)
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="inapropriado", genero=metadados.genero, canal=canal)
             msg = composer.compor("inapropriado", {"artista": metadados.artista, "musica": metadados.musica}, texto)
             return _resultado(False, None, msg)
 
         # --- Rate limiting por número (após confirmar que é pedido musical) ---
         _log_etapa(0, "Verificação de cooldown")
         if not DISABLE_COOLDOWN and not database.verificar_cooldown(numero):
-            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="cooldown", genero=metadados.genero)
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="cooldown", genero=metadados.genero, canal=canal)
             msg = composer.compor("cooldown", {"artista": metadados.artista, "musica": metadados.musica}, texto)
             return _resultado(False, None, msg)
+
+        # --- Gate de canal (item C, seção 8.1) ---
+        # Depois do cooldown (ninguém recebe convite para falar no ar quando a
+        # voz também seria recusada) e antes de is_confiante (não abre pendência
+        # de confirmação que seria recusada em seguida). Só vale para quem está
+        # chegando por texto — path_ogg (voz) nunca é bloqueado aqui.
+        # avaliar() faz UMA consulta ao banco para as duas respostas (bloqueado
+        # e tem_historico_de_voz), em vez de bloqueado()+tem_historico_de_voz()
+        # em separado, que gastaria duas consultas pelo mesmo pedido.
+        if canal == "texto":
+            canal_bloqueado, teve_voz = canal_voz.avaliar(numero)
+            if canal_bloqueado:
+                database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="apenas_voz", genero=metadados.genero, canal=canal)
+                situacao = "apenas_voz_retorno" if teve_voz else "apenas_voz"
+                msg = composer.compor(situacao, {"artista": metadados.artista, "musica": metadados.musica}, texto)
+                return _resultado(False, None, msg, aguardando_pedido=True)
 
         # Baixa confiança na identificação (transcrição possivelmente corrompida).
         # No modo retry o ouvinte já digitou — não abre nova pendência.
         if not metadados.is_confiante and not _is_retry:
             if not metadados.musica or not metadados.artista:
-                database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado")
+                database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado", canal=canal)
                 return _resultado(False, None, composer.compor("nao_id", {}, texto), aguardando_pedido=True)
             if path_ogg:
                 database.criar_pendencia(numero, path_ogg, metadados.artista, metadados.musica)
@@ -152,11 +183,11 @@ def processar_pedido(
             return _resultado(False, None, msg, pendente=True)
 
         if not metadados.musica or not metadados.artista:
-            database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado")
+            database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="nao_identificado", canal=canal)
             return _resultado(False, None, composer.compor("nao_id", {}, texto), aguardando_pedido=True)
 
         if not metadados.is_flashback and not repertorio.genero_liberado(metadados.genero):
-            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="nao_flashback", genero=metadados.genero)
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="nao_flashback", genero=metadados.genero, canal=canal)
             msg = composer.compor("nao_repertorio", {"musica": metadados.musica, "artista": metadados.artista, "genero": metadados.genero}, texto)
             return _resultado(False, None, msg, aguardando_pedido=True)
         if not metadados.is_flashback:
@@ -174,6 +205,10 @@ def processar_pedido(
             # Notifica apenas pedidos por texto (áudio já recebeu "Buscando a música..." no STT)
             if not path_ogg and notificar:
                 notificar("🔎 Buscando sua música...")
+            # Notificação técnica de fila do throttle (seção 7.4) — sem prometer
+            # prazo e sem mencionar posição na fila (regras duras do perfil).
+            if notificar and downloader.yt_throttle.espera_estimada("busca") > 20:
+                notificar("Tem fila na busca aqui, me dá só um instantinho 🎵")
             file_path = downloader.baixar(metadados.artista, metadados.musica)
 
         # --- Etapa 5: Mixagem (somente se havia voz para misturar) ---
@@ -213,7 +248,7 @@ def processar_pedido(
         # Registrado APÓS enfileirar bem-sucedido: cooldown só ativa se a música
         # foi entregue na fila. Se enfileirar lançar exceção, o except registra
         # o pedido como erro_tecnico (sem ativar cooldown para o ouvinte).
-        database.registrar_pedido(numero, metadados.artista, metadados.musica, genero=metadados.genero)
+        database.registrar_pedido(numero, metadados.artista, metadados.musica, genero=metadados.genero, canal=canal)
 
         msg = config_radio.MSG_SUCESSO.format(artista=metadados.artista, musica=metadados.musica)
         _log_separador(f"Concluído: {nome_saida}")
@@ -226,12 +261,28 @@ def processar_pedido(
             is_pedido_explicito=metadados.is_pedido_explicito,
         )
 
+    except (downloader.yt_throttle.FilaCheia, downloader.yt_throttle.EsperaExcedida) as e:
+        # Recusa amigável do throttle do YouTube (item B) — tem que vir antes
+        # do "except Exception" genérico abaixo: as duas exceções herdam de
+        # RuntimeError, e cairiam ali (erro_tecnico) se a ordem fosse invertida.
+        print(f"[PIPELINE] Busca ocupada (throttle do YouTube): {e}")
+        try:
+            database.registrar_pedido(
+                numero, metadados.artista, metadados.musica,
+                sucesso=False, motivo_rejeicao="busca_ocupada",
+                genero=metadados.genero, canal=canal,
+            )
+        except Exception:
+            pass
+        msg = luzia.mensagem("busca_ocupada", _MSG_BUSCA_OCUPADA_FALLBACK)
+        return _resultado(False, None, msg, codigo="download_ocupado", aguardando_pedido=True)
+
     except Exception as e:
         print(f"[PIPELINE] Erro tecnico: {e}")
         try:
             artista = metadados.artista if "metadados" in locals() else ""
             musica  = metadados.musica  if "metadados" in locals() else ""
-            database.registrar_pedido(numero, artista, musica, sucesso=False, motivo_rejeicao="erro_tecnico")
+            database.registrar_pedido(numero, artista, musica, sucesso=False, motivo_rejeicao="erro_tecnico", canal=canal)
         except Exception:
             pass
         return _resultado(False, None, _MSG_ERRO)
@@ -249,6 +300,7 @@ def _resultado(
     artista: str | None = None,
     musica: str | None = None,
     is_pedido_explicito: bool = False,
+    codigo: str | None = None,
 ) -> dict:
     return {
         "sucesso": sucesso,
@@ -260,6 +312,7 @@ def _resultado(
         "artista": artista,
         "musica": musica,
         "is_pedido_explicito": is_pedido_explicito,
+        "codigo": codigo,
     }
 
 

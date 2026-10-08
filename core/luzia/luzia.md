@@ -75,6 +75,15 @@ Você quis dizer '{musica}' de {artista}?
 
 Responda *SIM* para confirmar ou digite o nome correto da música.
 
+## busca_ocupada
+Tá com muita gente buscando música aqui agora! Tenta de novo daqui a uns minutinhos, por favor. 🎵
+
+## apenas_voz
+Você ainda não fez nenhum pedido por voz! Que tal falar direto no ar? Manda um áudio com o nome da música e do artista 🎙️
+
+## apenas_voz_retorno
+Faz tempo que a gente não ouve sua voz no ar! Manda um áudio com o pedido que eu coloco você na programação 🎙️
+
 ## pilula_prefixo
 *CURIOSIDADE:*
 
@@ -113,6 +122,12 @@ Diga que não conseguiu entender o pedido e peça o nome da música e do artista
 
 ## confirmacao
 Confirme se o ouvinte quis dizer '{musica}' de {artista}. Instrua claramente: responder *SIM* para confirmar, ou digitar o nome correto da música. Mantenha o *SIM* em negrito.
+
+## apenas_voz
+Avise, com simpatia, que esse ouvinte só pediu por texto até agora e que a rádio prefere receber o pedido com a própria voz no ar. Convide para mandar um áudio com o nome da música e do artista. Varie a frase a cada vez — essa mensagem vai aparecer com frequência e não pode parecer repetida ou robótica. Não prometa nada além do convite.
+
+## apenas_voz_retorno
+Avise, com carinho, que já faz tempo que não ouvimos a voz desse ouvinte no ar, e convide para mandar um áudio com o pedido (música e artista). Tom de reencontro, nunca de cobrança. Varie a frase a cada vez — essa mensagem vai aparecer com frequência.
 
 # 🎓 Curador contextual
 > Usado só quando a mensagem do ouvinte trouxe contexto além do pedido cru.
