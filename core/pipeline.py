@@ -120,7 +120,7 @@ def processar_pedido(
 
         # Música de conteúdo político vetada por título — vale para qualquer
         # canal (áudio ou texto). Ver core/eleitoral.py.
-        if eleitoral.eh_musica_proibida(metadados.musica):
+        if eleitoral.eh_musica_proibida(metadados.musica, metadados.artista):
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="eleitoral", genero=metadados.genero)
             return _resultado(False, None, luzia.MSG_ELEITORAL)
 
