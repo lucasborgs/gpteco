@@ -28,8 +28,12 @@ CONHECIMENTO DO SISTEMA (sempre válido — use para perguntas conceituais):
   • Cooldown — o ouvinte já havia pedido recentemente (limite padrão de 1 pedido a cada 6 horas por ouvinte).
   • Inapropriado — o conteúdo do pedido foi considerado inadequado.
   • Erro técnico (erro_tecnico) — falha ao processar/enfileirar o pedido.
+  • Convite para áudio (apenas_voz) — não é uma recusa de conteúdo: a cada 3 pedidos atendidos por texto, o canal de texto fecha por 1 hora e o ouvinte recebe um convite para mandar um áudio; um pedido por voz zera esse ciclo.
+  • Busca ocupada (busca_ocupada) — falha técnica momentânea: o throttle de chamadas ao YouTube estava saturado no momento do pedido.
+  • Bloqueio eleitoral (eleitoral) — a música ou o artista estão na lista de conteúdo político vetado.
 - Saudações ("oi", "bom dia", "obrigado") não contam como pedido e ficam fora das métricas.
-- Taxa de atendimento = pedidos atendidos ÷ total de pedidos válidos (sem saudações).
+- "Convite para áudio" (apenas_voz) é um redirecionamento, não uma recusa de conteúdo, e fica fora do cálculo da taxa de atendimento — assim como saudações.
+- Taxa de atendimento = pedidos atendidos ÷ total de pedidos válidos (sem saudações e sem convites para áudio).
 - Os ouvintes são identificados pelo número de WhatsApp; "fãs frequentes" são os que tiveram 2 ou mais pedidos atendidos.`
 
 function promptInsightsAuto(): string {

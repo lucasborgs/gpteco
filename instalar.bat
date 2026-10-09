@@ -77,7 +77,36 @@ if errorlevel 1 (
 echo.
 echo [OK] Imagens baixadas.
 
-:: ---- 5. Sobe os containers ---------------------------------------------
+:: ---- 5. Cria o perfil editavel da assistente ---------------------------
+:: O compose monta ./assistente.md por cima do perfil embutido na imagem.
+:: Sem o arquivo no host o Docker criaria uma PASTA com esse nome e o
+:: container nao subiria, entao extraimos o padrao da imagem ja baixada.
+echo.
+if exist "assistente.md" (
+    echo [OK] Arquivo assistente.md ja existe — mantido sem alteracoes.
+) else (
+    set "PERFIL_IMAGEM=iamlucb/gpteco:latest"
+    if exist ".env" (
+        for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
+            if /i "%%a"=="GPTECO_IMAGE" set "PERFIL_IMAGEM=%%b"
+        )
+    )
+    echo Extraindo perfil padrao da assistente de !PERFIL_IMAGEM! ...
+    docker run --rm --entrypoint cat "!PERFIL_IMAGEM!" /app/config/assistente.md > assistente.md
+    :: Redirecionamento cria o arquivo mesmo se o comando falhar — se vier
+    :: vazio, apagamos para nao montar um perfil em branco no container.
+    for %%f in ("assistente.md") do if %%~zf EQU 0 del "assistente.md"
+    if exist "assistente.md" (
+        echo [OK] assistente.md criado. Edite-o para mudar o tom e as mensagens.
+    ) else (
+        echo [ERRO] Nao foi possivel extrair o perfil da imagem.
+        echo Verifique se a imagem !PERFIL_IMAGEM! foi baixada no passo anterior.
+        pause
+        exit /b 1
+    )
+)
+
+:: ---- 6. Sobe os containers ---------------------------------------------
 echo.
 echo Iniciando os servicos...
 docker compose -f docker-compose.dist.yml up -d
@@ -89,17 +118,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: ---- 6. Aguarda WAHA inicializar ---------------------------------------
+:: ---- 7. Aguarda WAHA inicializar ---------------------------------------
 echo.
 echo Aguardando WAHA inicializar (15 segundos)...
 timeout /t 15 /nobreak >nul
 
-:: ---- 7. Abre o dashboard -----------------------------------------------
+:: ---- 8. Abre o dashboard -----------------------------------------------
 echo.
 echo Abrindo dashboard do WhatsApp no navegador...
 start http://localhost:3001/dashboard
 
-:: ---- 8. Instrucoes finais ----------------------------------------------
+:: ---- 9. Instrucoes finais ----------------------------------------------
 echo.
 echo ============================================================
 echo  Instalacao concluida!

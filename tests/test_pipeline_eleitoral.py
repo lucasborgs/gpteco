@@ -80,7 +80,7 @@ def test_audio_com_nome_de_candidato_e_bloqueado_antes_do_llm(monkeypatch, tmp_p
     assert resultado["mensagem"] == pipeline.luzia.MSG_ELEITORAL
     analisar.assert_not_called()
     registrar.assert_called_once_with(
-        "5511999999999", "", "", sucesso=False, motivo_rejeicao="eleitoral"
+        "5511999999999", "", "", sucesso=False, motivo_rejeicao="eleitoral", canal="voz"
     )
 
 
@@ -94,6 +94,7 @@ def test_texto_digitado_com_nome_de_candidato_nao_e_bloqueado(monkeypatch):
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
          patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
          patch.object(pipeline.database, "registrar_pedido"), \
+         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
          patch.object(pipeline, "queue_watcher") as fake_queue, \
          patch.object(pipeline, "shutil") as fake_shutil:
         fake_queue.enfileirar.return_value = "/fila/musica.mp3"
@@ -116,7 +117,7 @@ def test_musica_da_lista_proibida_e_bloqueada_em_pedido_por_texto(monkeypatch):
     assert resultado["mensagem"] == pipeline.luzia.MSG_ELEITORAL
     registrar.assert_called_once_with(
         "5511999999999", "Léo Santana", "Vai dar PT",
-        sucesso=False, motivo_rejeicao="eleitoral", genero="Sertanejo",
+        sucesso=False, motivo_rejeicao="eleitoral", genero="Sertanejo", canal="texto",
     )
 
 
@@ -146,6 +147,7 @@ def test_pedido_normal_sem_conteudo_eleitoral_nao_e_afetado(monkeypatch):
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
          patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
          patch.object(pipeline.database, "registrar_pedido"), \
+         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
          patch.object(pipeline, "queue_watcher") as fake_queue, \
          patch.object(pipeline, "shutil") as fake_shutil:
         fake_queue.enfileirar.return_value = "/fila/musica.mp3"

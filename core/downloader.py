@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yt_dlp
 
-from core import database
+from core import database, yt_throttle
 
 # Diretórios (configuráveis via .env)
 ACERVO_DIR: str = os.getenv(
@@ -96,7 +96,7 @@ def _sanitizar_nome(nome: str) -> str:
     return re.sub(r'[\\/:*?"<>|]', "_", nome).strip()
 
 
-def _baixar_youtube(query: str) -> str:
+def _baixar_youtube(query: str, orcamento: yt_throttle.Orcamento) -> str:
     """
     Busca no YouTube e baixa o melhor áudio de um resultado com duração
     plausível de música (<= MAX_DURACAO_S).
@@ -105,11 +105,18 @@ def _baixar_youtube(query: str) -> str:
     a faixa pedida, o pydub carrega o áudio inteiro na RAM na mixagem e um
     arquivo de horas estoura a memória do container (OOM).
 
+    Args:
+        query     : termo de busca já montado.
+        orcamento : orçamento de espera do throttle, compartilhado entre a
+                    busca principal e o fallback do MESMO pedido.
+
     Retorna:
         str : caminho do arquivo baixado (extensão variável: webm, m4a, opus...).
 
     Raises:
         RuntimeError : se nenhum resultado adequado for encontrado ou o download falhar.
+        yt_throttle.FilaCheia / yt_throttle.EsperaExcedida : sobem sem tratamento
+            até o pipeline, que decide a mensagem ao ouvinte.
     """
     os.makedirs(TEMP_DIR, exist_ok=True)
 
@@ -122,6 +129,7 @@ def _baixar_youtube(query: str) -> str:
         "socket_timeout": 30,                # segundos — evita hang indefinido
         "nopart": True,                      # evita .part → rename (falha em volumes Windows)
         "max_filesize": MAX_FILESIZE_BYTES,  # aborta o download se o arquivo passar do teto
+        "sleep_requests": 1.0,               # pausa entre as requisições HTTP de uma mesma extração
         "extractor_args": {
             "youtube": {"player_client": [YT_PLAYER_CLIENT]},
             "youtubepot-bgutilhttp": {"base_url": [POT_PROVIDER_URL]},
@@ -132,7 +140,8 @@ def _baixar_youtube(query: str) -> str:
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         # Fase 1 — coleta metadados dos primeiros resultados SEM baixar.
-        busca = ydl.extract_info(f"ytsearch{SEARCH_N}:{query}", download=False)
+        with yt_throttle.janela("busca", orcamento):
+            busca = ydl.extract_info(f"ytsearch{SEARCH_N}:{query}", download=False)
         entries = [e for e in ((busca or {}).get("entries") or []) if e]
 
         if not entries:
@@ -159,9 +168,10 @@ def _baixar_youtube(query: str) -> str:
             }
             try:
                 # Fase 2 — tenta cada resultado até encontrar um que possa ser baixado.
-                info = ydl.extract_info(
-                    f"https://www.youtube.com/watch?v={video_id}", download=True
-                )
+                with yt_throttle.janela("tentativa", orcamento):
+                    info = ydl.extract_info(
+                        f"https://www.youtube.com/watch?v={video_id}", download=True
+                    )
                 ext = info.get("ext", "webm")
                 path_baixado = os.path.join(TEMP_DIR, f"{video_id}.{ext}")
 
@@ -173,6 +183,10 @@ def _baixar_youtube(query: str) -> str:
                 titulo = info.get("title", query)
                 print(f"[DOWNLOADER] Baixado: '{titulo}' ({duracao // 60}min{duracao % 60:02d}s)")
                 return path_baixado
+            except (yt_throttle.FilaCheia, yt_throttle.EsperaExcedida):
+                # Não é falha do candidato: o throttle recusou o pedido inteiro.
+                # Tentar o próximo resultado só gastaria mais espera.
+                raise
             except Exception as erro:
                 falhas.append(f"{video_id}: {erro}")
                 falhas_previstas.append(_deve_tentar_busca_alternativa(erro))
@@ -257,16 +271,22 @@ def baixar(artista: str, musica: str) -> str:
 
     Raises:
         RuntimeError : se o download ou processamento falhar.
+        yt_throttle.FilaCheia / yt_throttle.EsperaExcedida : quando o throttle
+            recusa o pedido — o pipeline traduz em mensagem ao ouvinte.
     """
     os.makedirs(ACERVO_DIR, exist_ok=True)
 
+    # Um orçamento por pedido, compartilhado com o fallback: o teto de espera
+    # vale sobre o pedido inteiro, não sobre cada busca isolada.
+    orcamento = yt_throttle.Orcamento()
+
     query = f"{artista} {musica} official audio"
     try:
-        path_temp = _baixar_youtube(query)
+        path_temp = _baixar_youtube(query, orcamento)
     except _FalhaResultadosBloqueados:
         query_fallback = f"{artista} {musica} lyrics"
         print(f"[DOWNLOADER] Resultado bloqueado/indisponível — tentando fallback: '{query_fallback}'")
-        path_temp = _baixar_youtube(query_fallback)
+        path_temp = _baixar_youtube(query_fallback, orcamento)
 
     nome_arquivo = _sanitizar_nome(f"{artista} - {musica}") + ".mp3"
     path_final = os.path.join(ACERVO_DIR, nome_arquivo)

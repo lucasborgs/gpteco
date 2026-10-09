@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       client.query(`
         SELECT sucesso, motivo_rejeicao, COUNT(*) AS qtd
         FROM dim_pedidos
-        WHERE (motivo_rejeicao IS NULL OR motivo_rejeicao != 'saudacao')
+        WHERE (motivo_rejeicao IS NULL OR motivo_rejeicao NOT IN ('saudacao', 'apenas_voz'))
           ${dateWhere}
         GROUP BY sucesso, motivo_rejeicao
       `, dateParams),

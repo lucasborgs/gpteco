@@ -139,7 +139,7 @@ def taxa_atendimento() -> dict:
                 SELECT sucesso, motivo_rejeicao, COUNT(*) AS qtd
                 FROM dim_pedidos
                 WHERE timestamp_pedido >= %s
-                  AND (motivo_rejeicao IS NULL OR motivo_rejeicao != 'saudacao')
+                  AND (motivo_rejeicao IS NULL OR motivo_rejeicao NOT IN ('saudacao', 'apenas_voz'))
                 GROUP BY sucesso, motivo_rejeicao
             """, [inicio])
             rows = cur.fetchall()

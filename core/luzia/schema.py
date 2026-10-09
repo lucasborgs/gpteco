@@ -31,6 +31,9 @@ _MENSAGENS_OBRIGATORIAS = {
     "nao_id": set(),
     "confirmacao": {"musica", "artista"},
     "pilula_prefixo": set(),
+    "busca_ocupada": set(),
+    "apenas_voz": set(),
+    "apenas_voz_retorno": set(),
 }
 
 _FRONTMATTER_OBRIGATORIO = {"nome_radio", "ano_maximo", "versao"}

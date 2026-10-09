@@ -154,12 +154,18 @@ export function useFilteredAnalytics() {
     if (noOtherFilters && data?.taxa_atendimento) return data.taxa_atendimento
     const rows = applyFilters(pedidos, false, false, false, true)
     let sucesso = 0
+    let total = 0
     const por_motivo: Record<string, number> = {}
     rows.forEach(p => {
+      // apenas_voz é redirecionamento, não recusa — fora do cálculo da taxa,
+      // igual ao SQL de taxa_atendimento em route.ts. As linhas continuam em
+      // `pedidos` (pedidos_individuais), então o chip de filtro "Convite para
+      // áudio" segue funcionando normalmente.
+      if (!p.sucesso && p.motivo === 'apenas_voz') return
+      total++
       if (p.sucesso) sucesso++
       else por_motivo[p.motivo] = (por_motivo[p.motivo] || 0) + 1
     })
-    const total = rows.length
     return {
       total,
       sucesso,
