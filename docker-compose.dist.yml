@@ -96,9 +96,10 @@ services:
         source: ${CURRENT_SONG_DIR:-./workspace/current_song}
         target: /app/workspace/current_song
       # Perfil da assistente (tom, mensagens, repertório) — editável no cliente
-      # sem rebuild. Defina ASSISTANT_PROFILE_FILE no .env se quiser apontar
-      # para outro arquivo; o padrão é o perfil versionado no repositório.
-      - ${ASSISTANT_PROFILE_FILE:-./core/luzia/luzia.md}:/app/config/assistente.md:ro
+      # sem rebuild. O padrão é o assistente.md ao lado deste arquivo, que o
+      # instalar.bat extrai do padrão embutido na imagem na primeira execução.
+      # Defina ASSISTANT_PROFILE_FILE no .env para apontar para outro caminho.
+      - ${ASSISTANT_PROFILE_FILE:-./assistente.md}:/app/config/assistente.md:ro
 
     depends_on:
       - waha
