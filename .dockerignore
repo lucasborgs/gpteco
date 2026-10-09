@@ -12,6 +12,16 @@ workspace/
 data/
 *.duckdb
 
+# Build do painel — o servidor não lê nada de dashboard-web/ em runtime.
+# Sem isto, quem tiver rodado `npm install` no repo manda ~340MB de
+# dependências para dentro da imagem, e o tamanho dela passa a depender de
+# ter ou não um build local feito.
+# Os padrões precisam de **/ para casar em subdiretório: "node_modules/"
+# sozinho só casaria com um node_modules na RAIZ do contexto.
+**/node_modules
+**/.next
+**/tsconfig.tsbuildinfo
+
 # Git e ferramentas de dev
 .git/
 .gitignore
