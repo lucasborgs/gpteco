@@ -34,6 +34,7 @@ _MENSAGENS_OBRIGATORIAS = {
     "busca_ocupada": set(),
     "apenas_voz": set(),
     "apenas_voz_retorno": set(),
+    "erro_tecnico": set(),
 }
 
 _FRONTMATTER_OBRIGATORIO = {"nome_radio", "ano_maximo", "versao"}

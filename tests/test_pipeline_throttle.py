@@ -139,7 +139,7 @@ def test_mensagem_de_busca_ocupada_vem_do_perfil(monkeypatch):
     assert resultado["mensagem"] == pipeline.luzia.mensagem(
         "busca_ocupada", pipeline._MSG_BUSCA_OCUPADA_FALLBACK
     )
-    assert resultado["mensagem"] != pipeline._MSG_ERRO
+    assert resultado["mensagem"] != pipeline._msg_erro()
 
 
 def test_notificacao_de_fila_quando_espera_estimada_alta(monkeypatch):

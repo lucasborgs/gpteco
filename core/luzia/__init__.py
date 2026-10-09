@@ -63,9 +63,13 @@ _MSG_SLUG = {
     "MSG_PRODUCAO_ATIVADO": "producao_ativado",
     "MSG_MENU_POS_SUCESSO": "menu_pos_sucesso",
     "MSG_ENCERRAMENTO": "encerramento",
-    "MSG_APENAS_VOZ": "apenas_voz",
-    "MSG_APENAS_VOZ_RETORNO": "apenas_voz_retorno",
 }
+
+# NÃO acrescente aqui slugs criados DEPOIS da primeira entrega a um cliente.
+# _MSG_SLUG é estrito: se o assistente.md do cliente (congelado no estado em
+# que foi criado) não tiver a seção, o acesso levanta AttributeError e derruba
+# o gate que pediu a mensagem. Para slugs novos use luzia.mensagem(slug,
+# fallback), que é tolerante — ver o docstring de mensagem().
 
 # Situações de recusa esperadas (usadas pelo composer)
 SITUACOES_COMPOSER = (

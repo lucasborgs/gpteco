@@ -133,7 +133,9 @@ def test_tres_atendidos_por_texto_terceiro_ha_dez_minutos_recusa_apenas_voz(monk
 
     assert resultado["sucesso"] is False
     assert resultado["aguardando_pedido"] is True
-    assert resultado["mensagem"] == pipeline.luzia.MSG_APENAS_VOZ
+    assert resultado["mensagem"] == pipeline.luzia.mensagem(
+        "apenas_voz", pipeline.composer._FALLBACK_APENAS_VOZ
+    )
     registrar.assert_called_once_with(
         "5511999999999", "Chitãozinho e Xororó", "Evidências",
         sucesso=False, motivo_rejeicao="apenas_voz", genero="Sertanejo", canal="texto",
@@ -253,7 +255,9 @@ def test_sem_historico_de_voz_usa_mensagem_apenas_voz(monkeypatch):
     ]
     resultado, _ = _rodar_texto(pipeline, historico)
 
-    assert resultado["mensagem"] == pipeline.luzia.MSG_APENAS_VOZ
+    assert resultado["mensagem"] == pipeline.luzia.mensagem(
+        "apenas_voz", pipeline.composer._FALLBACK_APENAS_VOZ
+    )
 
 
 def test_com_historico_de_voz_usa_mensagem_apenas_voz_retorno(monkeypatch):
@@ -270,7 +274,9 @@ def test_com_historico_de_voz_usa_mensagem_apenas_voz_retorno(monkeypatch):
     resultado, registrar = _rodar_texto(pipeline, historico)
 
     assert resultado["sucesso"] is False
-    assert resultado["mensagem"] == pipeline.luzia.MSG_APENAS_VOZ_RETORNO
+    assert resultado["mensagem"] == pipeline.luzia.mensagem(
+        "apenas_voz_retorno", pipeline.composer._FALLBACK_APENAS_VOZ_RETORNO
+    )
     registrar.assert_called_once_with(
         "5511999999999", "Chitãozinho e Xororó", "Evidências",
         sucesso=False, motivo_rejeicao="apenas_voz", genero="Sertanejo", canal="texto",

@@ -60,6 +60,17 @@ _BLOCKLIST = re.compile(
     re.IGNORECASE,
 )
 
+# Fallbacks dos slugs que não estão em luzia._MSG_SLUG. Só entram em uso se o
+# perfil ativo não tiver a seção — o texto normal vem sempre do assistente.md.
+_FALLBACK_APENAS_VOZ = (
+    "Você ainda não fez nenhum pedido por voz! Que tal falar direto no ar? "
+    "Manda um áudio com o nome da música e do artista 🎙️"
+)
+_FALLBACK_APENAS_VOZ_RETORNO = (
+    "Faz tempo que a gente não ouve sua voz no ar! Manda um áudio com o "
+    "pedido que eu coloco você na programação 🎙️"
+)
+
 # Mapeia situação → função que produz o texto canônico (rede de segurança).
 _CANNED = {
     "nao_repertorio": lambda c: luzia.MSG_NAO_REPERTORIO.format_map(_Safe(c)),
@@ -67,8 +78,10 @@ _CANNED = {
     "inapropriado":   lambda c: luzia.MSG_INAPROPRIADO,
     "nao_id":         lambda c: luzia.MSG_NAO_ID,
     "confirmacao":    lambda c: luzia.MSG_CONFIRMACAO.format_map(_Safe(c)),
-    "apenas_voz":          lambda c: luzia.MSG_APENAS_VOZ,
-    "apenas_voz_retorno":  lambda c: luzia.MSG_APENAS_VOZ_RETORNO,
+    # Slugs criados depois da primeira entrega ao cliente: acesso TOLERANTE,
+    # porque o assistente.md dele pode não ter a seção (ver luzia._MSG_SLUG).
+    "apenas_voz":          lambda c: luzia.mensagem("apenas_voz", _FALLBACK_APENAS_VOZ),
+    "apenas_voz_retorno":  lambda c: luzia.mensagem("apenas_voz_retorno", _FALLBACK_APENAS_VOZ_RETORNO),
 }
 
 

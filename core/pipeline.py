@@ -43,8 +43,12 @@ TEMP_DIR: str = os.getenv(
 # Define como "true" no .env para desativar o cooldown durante testes
 DISABLE_COOLDOWN: bool = os.getenv("DISABLE_COOLDOWN", "false").lower() == "true"
 
-# Mensagem de erro técnico — não é configurável (não é mensagem da rádio)
-_MSG_ERRO = "Ocorreu um erro ao processar seu pedido. Tente novamente em breve."
+# Mensagem de falha interna. O texto normal vem do perfil (## erro_tecnico),
+# para a rádio ajustar o tom sem rebuild; esta constante é só o fallback de um
+# assistente.md que ainda não tenha a seção. Ver _msg_erro(), nos helpers.
+_MSG_ERRO_FALLBACK = (
+    "Ops, me embolei aqui com o seu pedido! Pode mandar de novo daqui a pouquinho? 🎵"
+)
 
 # Fallback de "busca_ocupada" (F0.4/B4) — usado só se o perfil ativo não tiver
 # o slug (ex.: assistente.md do cliente ainda não atualizado). O texto normal
@@ -77,9 +81,9 @@ def processar_pedido(
     """
     # --- Validação de entrada ---
     if not path_ogg and not texto:
-        return _resultado(False, None, _MSG_ERRO)
+        return _resultado(False, None, _msg_erro())
     if path_ogg and not os.path.isfile(path_ogg):
-        return _resultado(False, None, _MSG_ERRO)
+        return _resultado(False, None, _msg_erro())
 
     # Modo retry: path_ogg + texto fornecidos juntos.
     # O texto é a confirmação digitada pelo ouvinte; o áudio é usado só para a mixagem.
@@ -285,10 +289,21 @@ def processar_pedido(
             database.registrar_pedido(numero, artista, musica, sucesso=False, motivo_rejeicao="erro_tecnico", canal=canal)
         except Exception:
             pass
-        return _resultado(False, None, _MSG_ERRO)
+        return _resultado(False, None, _msg_erro())
 
 
 # --- Helpers internos ---
+
+def _msg_erro() -> str:
+    """Texto de falha interna, lido do perfil a CADA chamada.
+
+    Não é constante de módulo porque o perfil tem hot-reload por mtime: ler no
+    import congelaria a mensagem da primeira versão carregada. Acesso tolerante
+    (luzia.mensagem) de propósito — este é o caminho de erro, o último lugar
+    onde cabe levantar outra exceção por falta de uma seção no assistente.md.
+    """
+    return luzia.mensagem("erro_tecnico", _MSG_ERRO_FALLBACK)
+
 
 def _resultado(
     sucesso: bool,

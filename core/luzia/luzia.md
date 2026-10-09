@@ -84,6 +84,9 @@ Você ainda não fez nenhum pedido por voz! Que tal falar direto no ar? Manda um
 ## apenas_voz_retorno
 Faz tempo que a gente não ouve sua voz no ar! Manda um áudio com o pedido que eu coloco você na programação 🎙️
 
+## erro_tecnico
+Ops, me embolei aqui com o seu pedido! Pode mandar de novo daqui a pouquinho? 🎵
+
 ## pilula_prefixo
 *CURIOSIDADE:*
 
