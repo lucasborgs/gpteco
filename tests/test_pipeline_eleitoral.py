@@ -61,6 +61,7 @@ class _Metadados:
         self.is_confiante = is_confiante
         self.is_pedido_explicito = False
         self.genero = genero
+        self.is_eleitoral = False
 
 
 def test_audio_com_nome_de_candidato_e_bloqueado_antes_do_llm(monkeypatch, tmp_path):
@@ -155,3 +156,66 @@ def test_pedido_normal_sem_conteudo_eleitoral_nao_e_afetado(monkeypatch):
 
     assert resultado["sucesso"] is True
     assert resultado["mensagem"] != pipeline.luzia.MSG_ELEITORAL
+
+
+# --- Camada do classificador (is_eleitoral), complementar à lista fixa ---
+
+def test_classificador_bloqueia_musica_fora_da_lista(monkeypatch):
+    """O furo que motivou a camada: título que a lista não prevê (variante de
+    grafia, apelido, faixa não catalogada) passava direto, mesmo com o LLM
+    tendo reconhecido o teor — ver o caso do Dead Fish em 2026-10-09."""
+    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
+    metadados = _Metadados(musica="Jingle Qualquer", artista="Banda Qualquer")
+    metadados.is_eleitoral = True
+    registrar = Mock()
+
+    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
+         patch.object(pipeline.database, "registrar_pedido", registrar):
+        resultado = pipeline.processar_pedido("5511999999999", texto="toca o jingle qualquer")
+
+    assert resultado["sucesso"] is False
+    assert resultado["mensagem"] == pipeline.luzia.MSG_ELEITORAL
+    registrar.assert_called_once_with(
+        "5511999999999", "Banda Qualquer", "Jingle Qualquer",
+        sucesso=False, motivo_rejeicao="eleitoral", genero="Sertanejo", canal="texto",
+    )
+
+
+def test_lista_bloqueia_mesmo_com_classificador_dizendo_que_nao(monkeypatch):
+    """A lista é o piso auditável aprovado pela emissora: o julgamento do
+    modelo não pode liberar um título que a rádio decidiu barrar."""
+    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
+    metadados = _Metadados(musica="Lula Lá", artista="Artista Qualquer")
+    metadados.is_eleitoral = False
+
+    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
+         patch.object(pipeline.database, "registrar_pedido"):
+        resultado = pipeline.processar_pedido("5511999999999", texto="toca lula la")
+
+    assert resultado["sucesso"] is False
+    assert resultado["mensagem"] == pipeline.luzia.MSG_ELEITORAL
+
+
+def test_perfil_antigo_sem_o_campo_nao_quebra_nem_bloqueia(monkeypatch):
+    """O campo só existe no classificador a partir de 2026-10. Resposta sem
+    ele cai no default False — volta ao comportamento antigo (só a lista),
+    em vez de levantar ou barrar pedido legítimo."""
+    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
+    metadados = pipeline.intelligence.MetadadosMusica(
+        is_pedido_musical=True, musica="Evidências",
+        artista="Chitãozinho e Xororó", is_flashback=True, is_apropriado=True,
+    )
+
+    assert metadados.is_eleitoral is False
+
+    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
+         patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
+         patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
+         patch.object(pipeline.database, "registrar_pedido"), \
+         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
+         patch.object(pipeline, "queue_watcher") as fake_queue, \
+         patch.object(pipeline, "shutil"):
+        fake_queue.enfileirar.return_value = "/fila/musica.mp3"
+        resultado = pipeline.processar_pedido("5511999999999", texto="toca Evidências")
+
+    assert resultado["sucesso"] is True

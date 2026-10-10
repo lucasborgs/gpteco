@@ -63,6 +63,7 @@ class _Metadados:
         self.is_confiante = is_confiante
         self.is_pedido_explicito = False
         self.genero = genero
+        self.is_eleitoral = False
 
 
 def test_fila_cheia_no_download_e_recusa_amigavel(monkeypatch):

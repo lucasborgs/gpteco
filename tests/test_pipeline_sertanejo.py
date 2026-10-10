@@ -63,6 +63,7 @@ class _Metadados:
         self.is_confiante = is_confiante
         self.is_pedido_explicito = False
         self.genero = genero
+        self.is_eleitoral = False
 
 
 def test_sertanejo_moderno_e_aceito_mesmo_sem_flashback(monkeypatch):

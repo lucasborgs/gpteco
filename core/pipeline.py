@@ -137,9 +137,13 @@ def processar_pedido(
             print("[PIPELINE] Mensagem fora de escopo — enviando menu.")
             return _resultado(False, None, config_radio.MSG_SAUDACAO, mostrar_menu=True)
 
-        # Música de conteúdo político vetada por título — vale para qualquer
-        # canal (áudio ou texto). Ver core/eleitoral.py.
-        if eleitoral.eh_musica_proibida(metadados.musica, metadados.artista):
+        # Música de conteúdo político vetada — vale para qualquer canal (áudio
+        # ou texto). Duas camadas: a lista fixa de core/eleitoral.py, que é o
+        # piso auditável aprovado pela emissora, e o julgamento do classificador
+        # (is_eleitoral), que pega o que a lista não previu — variante de
+        # grafia, apelido, título fora da lista. Nenhuma das duas sozinha
+        # resolve: a lista não escala, e o LLM não dá garantia por título.
+        if eleitoral.eh_musica_proibida(metadados.musica, metadados.artista) or metadados.is_eleitoral:
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="eleitoral", genero=metadados.genero, canal=canal)
             return _resultado(False, None, luzia.MSG_ELEITORAL)
 

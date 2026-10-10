@@ -76,6 +76,7 @@ class _Metadados:
         self.is_confiante = is_confiante
         self.is_pedido_explicito = False
         self.genero = genero
+        self.is_eleitoral = False
 
 
 def _rodar_texto(pipeline, historico, registrar=None, notificar=None):

@@ -130,6 +130,7 @@ class _Metadados:
         self.is_confiante = True
         self.is_pedido_explicito = False
         self.genero = "Sertanejo"
+        self.is_eleitoral = False
 
 
 # --- O perfil defasado não derruba o composer ---------------------------------
