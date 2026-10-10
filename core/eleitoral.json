@@ -1,0 +1,980 @@
+{
+  "versao": 1,
+  "candidatos": [
+    "Lula",
+    "Bolsonaro",
+    "Caiado",
+    "Renan Santos",
+    "Zema",
+    "Augusto Cury",
+    "Pablo Marçal",
+    "Cleitinho Azevedo",
+    "Ananias",
+    "Alexandre Kalil",
+    "Mateus Simões",
+    "Gabriel Azevedo",
+    "Flávio Roscoe",
+    "Alexandre de Moraes",
+    "Ana Luiza do MLB",
+    "Arcanjo Pimenta",
+    "Áurea Carolina",
+    "Carlin Moura",
+    "Carlos Viana",
+    "Domingos Sávio",
+    "Fidélis Alcântara",
+    "Gustavo Galassi",
+    "Jordano Metalúrgico",
+    "Juiz Ramon Moreira",
+    "Manoel Carvalho",
+    "Marcelo Aro",
+    "Marcelo Heringer",
+    "Marco Antônio Superman",
+    "Marília Campos",
+    "Tião Pessoa",
+    "Victória Mello Vic"
+  ],
+  "musicas_proibidas": [
+    {
+      "titulos": [
+        "Para e Reflete"
+      ],
+      "artistas": [
+        "Eduardo Costa"
+      ]
+    },
+    {
+      "titulos": [
+        "Olha o Trem"
+      ],
+      "artistas": [
+        "Eduardo Costa"
+      ]
+    },
+    {
+      "titulos": [
+        "O Prato do Dia",
+        "Prato do Dia"
+      ],
+      "artistas": [
+        "Tião Carreiro & Pardinho"
+      ]
+    },
+    {
+      "titulos": [
+        "A Viola e a Bíblia",
+        "Viola e a Bíblia"
+      ],
+      "artistas": [
+        "Tião Carreiro & Pardinho"
+      ]
+    },
+    {
+      "titulos": [
+        "Sina de Caboclo"
+      ],
+      "artistas": [
+        "João do Vale"
+      ]
+    },
+    {
+      "titulos": [
+        "Carcará"
+      ],
+      "artistas": [
+        "João do Vale"
+      ]
+    },
+    {
+      "titulos": [
+        "Faz o L"
+      ],
+      "artistas": [
+        "Juliano Maderada"
+      ]
+    },
+    {
+      "titulos": [
+        "Vai Dar PT"
+      ],
+      "artistas": [
+        "Léo Santana"
+      ]
+    },
+    {
+      "titulos": [
+        "Tá Na Hora do Jair Já Ir Embora"
+      ],
+      "artistas": [
+        "Juliano Maderada"
+      ]
+    },
+    {
+      "titulos": [
+        "Lambadão do 13"
+      ],
+      "artistas": [
+        "Juliano Maderada"
+      ]
+    },
+    {
+      "titulos": [
+        "Tá Com Medo da Parada"
+      ],
+      "artistas": [
+        "Juliano Maderada"
+      ]
+    },
+    {
+      "titulos": [
+        "Sem Medo de Ser Feliz",
+        "Lula Lá"
+      ],
+      "artistas": []
+    },
+    {
+      "titulos": [
+        "Bora Lula"
+      ],
+      "artistas": [
+        "Chico Buarque",
+        "Caetano Veloso",
+        "Gilberto Gil"
+      ]
+    },
+    {
+      "titulos": [
+        "Capitão do Povo"
+      ],
+      "artistas": [
+        "Mateus & Cristiano"
+      ]
+    },
+    {
+      "titulos": [
+        "Rap do Silva"
+      ],
+      "artistas": [
+        "MC Bob Rum"
+      ]
+    },
+    {
+      "titulos": [
+        "Tô Feliz",
+        "Matei o Presidente",
+        "Tô Feliz Matei o Presidente"
+      ],
+      "artistas": [
+        "Gabriel O Pensador"
+      ]
+    },
+    {
+      "titulos": [
+        "Ideologia"
+      ],
+      "artistas": [
+        "Cazuza",
+        "Gabriel O Pensador"
+      ]
+    },
+    {
+      "titulos": [
+        "2345608",
+        "2 3 4 5 6 0 8"
+      ],
+      "artistas": [
+        "Gabriel O Pensador"
+      ]
+    },
+    {
+      "titulos": [
+        "Diário de um Detento"
+      ],
+      "artistas": [
+        "Racionais MC's"
+      ]
+    },
+    {
+      "titulos": [
+        "Fim de Semana no Parque"
+      ],
+      "artistas": [
+        "Racionais MC's"
+      ]
+    },
+    {
+      "titulos": [
+        "Capítulo 4, Versículo 3",
+        "Capítulo 4 Versículo 3"
+      ],
+      "artistas": [
+        "Racionais MC's"
+      ]
+    },
+    {
+      "titulos": [
+        "Jesus Chorou"
+      ],
+      "artistas": [
+        "Racionais MC's"
+      ]
+    },
+    {
+      "titulos": [
+        "Negro Drama"
+      ],
+      "artistas": [
+        "Racionais MC's"
+      ]
+    },
+    {
+      "titulos": [
+        "Não Existe Amor em SP",
+        "Não Existe Amor em São Paulo"
+      ],
+      "artistas": [
+        "Criolo"
+      ]
+    },
+    {
+      "titulos": [
+        "Boca de Lobo"
+      ],
+      "artistas": [
+        "Criolo"
+      ]
+    },
+    {
+      "titulos": [
+        "Cálice"
+      ],
+      "artistas": [
+        "Chico Buarque",
+        "Gilberto Gil",
+        "Criolo"
+      ]
+    },
+    {
+      "titulos": [
+        "Olho de Tigre"
+      ],
+      "artistas": [
+        "Djonga"
+      ]
+    },
+    {
+      "titulos": [
+        "AmarElo"
+      ],
+      "artistas": [
+        "Emicida"
+      ]
+    },
+    {
+      "titulos": [
+        "Boa Esperança"
+      ],
+      "artistas": [
+        "Emicida"
+      ]
+    },
+    {
+      "titulos": [
+        "Ismália"
+      ],
+      "artistas": [
+        "Emicida"
+      ]
+    },
+    {
+      "titulos": [
+        "Mantenha o Respeito"
+      ],
+      "artistas": [
+        "Planet Hemp",
+        "Marcelo D2"
+      ]
+    },
+    {
+      "titulos": [
+        "Dig Dig Dig",
+        "Hempa",
+        "Dig Dig Dig Hempa"
+      ],
+      "artistas": [
+        "Planet Hemp"
+      ]
+    },
+    {
+      "titulos": [
+        "Soldado do Morro"
+      ],
+      "artistas": [
+        "MV Bill"
+      ]
+    },
+    {
+      "titulos": [
+        "Só Deus Pode Me Julgar"
+      ],
+      "artistas": [
+        "MV Bill"
+      ]
+    },
+    {
+      "titulos": [
+        "Que País É Este"
+      ],
+      "artistas": [
+        "Legião Urbana",
+        "Capital Inicial"
+      ]
+    },
+    {
+      "titulos": [
+        "Índios"
+      ],
+      "artistas": [
+        "Legião Urbana"
+      ]
+    },
+    {
+      "titulos": [
+        "Faroeste Caboclo"
+      ],
+      "artistas": [
+        "Legião Urbana"
+      ]
+    },
+    {
+      "titulos": [
+        "Geração Coca-Cola"
+      ],
+      "artistas": [
+        "Legião Urbana"
+      ]
+    },
+    {
+      "titulos": [
+        "Conexão Amazônica"
+      ],
+      "artistas": [
+        "Legião Urbana"
+      ]
+    },
+    {
+      "titulos": [
+        "Polícia"
+      ],
+      "artistas": [
+        "Titãs"
+      ]
+    },
+    {
+      "titulos": [
+        "O Pulso"
+      ],
+      "artistas": [
+        "Titãs"
+      ]
+    },
+    {
+      "titulos": [
+        "Pulso"
+      ],
+      "artistas": [
+        "Titãs"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Homem Primata"
+      ],
+      "artistas": [
+        "Titãs"
+      ]
+    },
+    {
+      "titulos": [
+        "Veraneio Vascaína"
+      ],
+      "artistas": [
+        "Capital Inicial"
+      ]
+    },
+    {
+      "titulos": [
+        "Luís Inácio",
+        "300 Picaretas",
+        "Luís Inácio 300 Picaretas"
+      ],
+      "artistas": [
+        "Os Paralamas do Sucesso"
+      ]
+    },
+    {
+      "titulos": [
+        "Alagados"
+      ],
+      "artistas": [
+        "Os Paralamas do Sucesso"
+      ]
+    },
+    {
+      "titulos": [
+        "Toda Forma de Poder"
+      ],
+      "artistas": [
+        "Engenheiros do Hawaii"
+      ]
+    },
+    {
+      "titulos": [
+        "Ninguém = Ninguém",
+        "Ninguém Igual Ninguém"
+      ],
+      "artistas": [
+        "Engenheiros do Hawaii"
+      ]
+    },
+    {
+      "titulos": [
+        "A Revolta dos Dândis",
+        "Revolta dos Dândis"
+      ],
+      "artistas": [
+        "Engenheiros do Hawaii"
+      ]
+    },
+    {
+      "titulos": [
+        "Tribos e Tribos"
+      ],
+      "artistas": [
+        "Engenheiros do Hawaii"
+      ]
+    },
+    {
+      "titulos": [
+        "Até Quando Esperar"
+      ],
+      "artistas": [
+        "Plebe Rude"
+      ]
+    },
+    {
+      "titulos": [
+        "Inútil"
+      ],
+      "artistas": [
+        "Ultraje a Rigor"
+      ]
+    },
+    {
+      "titulos": [
+        "Inviolável"
+      ],
+      "artistas": [
+        "Ultraje a Rigor"
+      ]
+    },
+    {
+      "titulos": [
+        "Nós Vamos Invadir sua Praia"
+      ],
+      "artistas": [
+        "Ultraje a Rigor"
+      ]
+    },
+    {
+      "titulos": [
+        "Burguesia"
+      ],
+      "artistas": [
+        "Cazuza"
+      ]
+    },
+    {
+      "titulos": [
+        "O Tempo Não Pára",
+        "Tempo Não Pára"
+      ],
+      "artistas": [
+        "Cazuza"
+      ]
+    },
+    {
+      "titulos": [
+        "Zé Ninguém"
+      ],
+      "artistas": [
+        "Biquini Cavadão"
+      ]
+    },
+    {
+      "titulos": [
+        "Admirável Chip Novo"
+      ],
+      "artistas": [
+        "Pitty"
+      ]
+    },
+    {
+      "titulos": [
+        "Teto de Vidro"
+      ],
+      "artistas": [
+        "Pitty"
+      ]
+    },
+    {
+      "titulos": [
+        "Papai Noel Velho Batuta"
+      ],
+      "artistas": [
+        "Garotos Podres"
+      ]
+    },
+    {
+      "titulos": [
+        "Crucificados pelo Sistema"
+      ],
+      "artistas": [
+        "Ratos de Porão"
+      ]
+    },
+    {
+      "titulos": [
+        "Pra Não Dizer Que Não Falei das Flores",
+        "Pra Não Dizer Que Eu Não Falei das Flores",
+        "Para Não Dizer Que Não Falei das Flores",
+        "Para Não Dizer Que Eu Não Falei das Flores"
+      ],
+      "artistas": [
+        "Geraldo Vandré"
+      ]
+    },
+    {
+      "titulos": [
+        "Aroeira"
+      ],
+      "artistas": [
+        "Geraldo Vandré"
+      ]
+    },
+    {
+      "titulos": [
+        "Aluga-se"
+      ],
+      "artistas": [
+        "Raul Seixas"
+      ]
+    },
+    {
+      "titulos": [
+        "Sociedade Alternativa"
+      ],
+      "artistas": [
+        "Raul Seixas"
+      ]
+    },
+    {
+      "titulos": [
+        "O Trem das Sete",
+        "Trem das Sete"
+      ],
+      "artistas": [
+        "Raul Seixas"
+      ]
+    },
+    {
+      "titulos": [
+        "Cowboy Fora da Lei"
+      ],
+      "artistas": [
+        "Raul Seixas"
+      ]
+    },
+    {
+      "titulos": [
+        "Mosca na Sopa"
+      ],
+      "artistas": [
+        "Raul Seixas"
+      ]
+    },
+    {
+      "titulos": [
+        "Apesar de Você"
+      ],
+      "artistas": [
+        "Chico Buarque"
+      ]
+    },
+    {
+      "titulos": [
+        "Roda Viva"
+      ],
+      "artistas": [
+        "Chico Buarque"
+      ]
+    },
+    {
+      "titulos": [
+        "Construção"
+      ],
+      "artistas": [
+        "Chico Buarque"
+      ]
+    },
+    {
+      "titulos": [
+        "Meu Caro Amigo"
+      ],
+      "artistas": [
+        "Chico Buarque"
+      ]
+    },
+    {
+      "titulos": [
+        "Acorda Amor"
+      ],
+      "artistas": [
+        "Chico Buarque"
+      ]
+    },
+    {
+      "titulos": [
+        "As Caravanas",
+        "Caravanas"
+      ],
+      "artistas": [
+        "Chico Buarque"
+      ]
+    },
+    {
+      "titulos": [
+        "Alegria, Alegria",
+        "Alegria Alegria"
+      ],
+      "artistas": [
+        "Caetano Veloso"
+      ]
+    },
+    {
+      "titulos": [
+        "É Proibido Proibir"
+      ],
+      "artistas": [
+        "Caetano Veloso"
+      ]
+    },
+    {
+      "titulos": [
+        "Vândalo do Apocalipse"
+      ],
+      "artistas": [
+        "Caetano Veloso"
+      ]
+    },
+    {
+      "titulos": [
+        "Podres Poderes"
+      ],
+      "artistas": [
+        "Caetano Veloso"
+      ]
+    },
+    {
+      "titulos": [
+        "Aquele Abraço"
+      ],
+      "artistas": [
+        "Gilberto Gil"
+      ]
+    },
+    {
+      "titulos": [
+        "Nos Barracos da Cidade"
+      ],
+      "artistas": [
+        "Gilberto Gil"
+      ]
+    },
+    {
+      "titulos": [
+        "Aquele Frevo Axé"
+      ],
+      "artistas": [
+        "Gilberto Gil"
+      ]
+    },
+    {
+      "titulos": [
+        "Como Nossos Pais"
+      ],
+      "artistas": [
+        "Elis Regina",
+        "Belchior"
+      ]
+    },
+    {
+      "titulos": [
+        "O Bêbado e a Equilibrista",
+        "O Bêbado e o Equilibrista",
+        "Bêbado e a Equilibrista",
+        "Bêbado e o Equilibrista"
+      ],
+      "artistas": [
+        "Elis Regina"
+      ]
+    },
+    {
+      "titulos": [
+        "Sujeito de Sorte"
+      ],
+      "artistas": [
+        "Belchior"
+      ]
+    },
+    {
+      "titulos": [
+        "O Oitavo Dia",
+        "Oitavo Dia"
+      ],
+      "artistas": [
+        "Gonzaguinha"
+      ]
+    },
+    {
+      "titulos": [
+        "Com a Perna No Mundo"
+      ],
+      "artistas": [
+        "Gonzaguinha"
+      ]
+    },
+    {
+      "titulos": [
+        "Comportamento Geral"
+      ],
+      "artistas": [
+        "Gonzaguinha"
+      ]
+    },
+    {
+      "titulos": [
+        "Onde Está a Honestidade?",
+        "Onde Está a Honestidade"
+      ],
+      "artistas": [
+        "Noel Rosa"
+      ]
+    },
+    {
+      "titulos": [
+        "Presidente Bossa Nova"
+      ],
+      "artistas": [
+        "Juca Chaves"
+      ]
+    },
+    {
+      "titulos": [
+        "Coração de Estudante"
+      ],
+      "artistas": [
+        "Milton Nascimento"
+      ]
+    },
+    {
+      "titulos": [
+        "Panis et Circenses"
+      ],
+      "artistas": [
+        "Os Mutantes"
+      ]
+    },
+    {
+      "titulos": [
+        "Diretas Já"
+      ],
+      "artistas": []
+    },
+    {
+      "titulos": [
+        "Chega"
+      ],
+      "artistas": [
+        "Gabriel O Pensador"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Ladrão"
+      ],
+      "artistas": [
+        "Djonga"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Leal"
+      ],
+      "artistas": [
+        "Djonga"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Qual É?",
+        "Qual É"
+      ],
+      "artistas": [
+        "Marcelo D2"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "O Estilo",
+        "Estilo"
+      ],
+      "artistas": [
+        "MV Bill"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Perfeição"
+      ],
+      "artistas": [
+        "Legião Urbana"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Comida"
+      ],
+      "artistas": [
+        "Titãs"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Lugar Nenhum"
+      ],
+      "artistas": [
+        "Titãs"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Igreja"
+      ],
+      "artistas": [
+        "Titãs"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Natasha"
+      ],
+      "artistas": [
+        "Capital Inicial"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Selvagem"
+      ],
+      "artistas": [
+        "Os Paralamas do Sucesso"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "O Beco",
+        "Beco"
+      ],
+      "artistas": [
+        "Os Paralamas do Sucesso"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Proteção"
+      ],
+      "artistas": [
+        "Plebe Rude"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Brasil"
+      ],
+      "artistas": [
+        "Cazuza",
+        "Barão Vermelho"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Livre"
+      ],
+      "artistas": [
+        "Biquini Cavadão"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Noite Inteira"
+      ],
+      "artistas": [
+        "Pitty"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Caminhando"
+      ],
+      "artistas": [
+        "Geraldo Vandré"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "É"
+      ],
+      "artistas": [
+        "Gonzaguinha"
+      ],
+      "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Opinião"
+      ],
+      "artistas": [
+        "Zé Keti"
+      ],
+      "exige_artista": true
+    }
+  ]
+}

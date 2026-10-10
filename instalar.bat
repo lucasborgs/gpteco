@@ -106,7 +106,36 @@ if exist "assistente.md" (
     )
 )
 
-:: ---- 6. Sobe os containers ---------------------------------------------
+:: ---- 6. Cria a lista editavel de bloqueio eleitoral -------------------
+:: Mesmo esquema do assistente.md: o compose monta ./eleitoral.json por cima
+:: da lista embutida na imagem. Sem o arquivo no host o Docker criaria uma
+:: PASTA com esse nome, e as edicoes da emissora nao valeriam nada.
+echo.
+if exist "eleitoral.json" (
+    echo [OK] Arquivo eleitoral.json ja existe - mantido sem alteracoes.
+) else (
+    set "LISTA_IMAGEM=iamlucb/gpteco:latest"
+    if exist ".env" (
+        for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
+            if /i "%%a"=="GPTECO_IMAGE" set "LISTA_IMAGEM=%%b"
+        )
+    )
+    echo Extraindo lista padrao de bloqueio eleitoral de !LISTA_IMAGEM! ...
+    docker run --rm --entrypoint cat "!LISTA_IMAGEM!" /app/config/eleitoral.json > eleitoral.json
+    :: Redirecionamento cria o arquivo mesmo se o comando falhar - se vier
+    :: vazio, apagamos para nao montar uma lista em branco no container.
+    for %%f in ("eleitoral.json") do if %%~zf EQU 0 del "eleitoral.json"
+    if exist "eleitoral.json" (
+        echo [OK] eleitoral.json criado. Edite-o para bloquear ou liberar musicas.
+    ) else (
+        echo [ERRO] Nao foi possivel extrair a lista da imagem.
+        echo Verifique se a imagem !LISTA_IMAGEM! foi baixada no passo anterior.
+        pause
+        exit /b 1
+    )
+)
+
+:: ---- 7. Sobe os containers ---------------------------------------------
 echo.
 echo Iniciando os servicos...
 docker compose -f docker-compose.dist.yml up -d
@@ -118,17 +147,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: ---- 7. Aguarda WAHA inicializar ---------------------------------------
+:: ---- 8. Aguarda WAHA inicializar ---------------------------------------
 echo.
 echo Aguardando WAHA inicializar (15 segundos)...
 timeout /t 15 /nobreak >nul
 
-:: ---- 8. Abre o dashboard -----------------------------------------------
+:: ---- 9. Abre o dashboard -----------------------------------------------
 echo.
 echo Abrindo dashboard do WhatsApp no navegador...
 start http://localhost:3001/dashboard
 
-:: ---- 9. Instrucoes finais ----------------------------------------------
+:: ---- 10. Instrucoes finais ----------------------------------------------
 echo.
 echo ============================================================
 echo  Instalacao concluida!

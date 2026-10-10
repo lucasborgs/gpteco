@@ -117,7 +117,7 @@ def test_musicas_proibidas_sem_titulo_duplicado_entre_entradas():
     """Teste de integridade: nenhum título normalizado pode casar com mais
     de uma entrada — colisão quase sempre significa alias duplicado."""
     vistos: dict[str, int] = {}
-    for indice, entrada in enumerate(eleitoral.MUSICAS_PROIBIDAS):
+    for indice, entrada in enumerate(eleitoral.musicas_proibidas()):
         for titulo in entrada.titulos:
             titulo_norm = eleitoral._normalizar(titulo)
             assert titulo_norm not in vistos, (
@@ -130,7 +130,7 @@ def test_musicas_proibidas_sem_titulo_duplicado_entre_entradas():
 def test_musicas_proibidas_exige_artista_tem_artistas_nao_vazio():
     """Teste de integridade: toda entrada que exige artista precisa ter ao
     menos um artista conhecido para casar — senão ela nunca bloqueia."""
-    for indice, entrada in enumerate(eleitoral.MUSICAS_PROIBIDAS):
+    for indice, entrada in enumerate(eleitoral.musicas_proibidas()):
         if entrada.exige_artista:
             assert entrada.artistas, (
                 f"entrada {indice} ({entrada.titulos!r}) tem exige_artista=True "

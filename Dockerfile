@@ -36,6 +36,11 @@ RUN mkdir -p workspace/musicas/acervo_limpo workspace/musicas/fila_zara workspac
 # próprio assistente.md por cima via bind mount em ASSISTANT_PROFILE_PATH) ---
 RUN mkdir -p /app/config && cp core/luzia/luzia.md /app/config/assistente.md
 
+# --- Lista de bloqueio eleitoral (mesmo esquema: a emissora edita a dela no
+# host e monta por cima via ELEITORAL_LISTA_PATH). Esta cópia é o padrão a ser
+# extraído pelo instalar.bat; a de core/ é o fallback de core/eleitoral.py ---
+RUN cp core/eleitoral.json /app/config/eleitoral.json
+
 # Porta do servidor webhook
 EXPOSE 8002
 

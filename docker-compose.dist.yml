@@ -81,6 +81,10 @@ services:
       # Perfil editável da assistente — a imagem já sobe com um padrão embutido
       # (Dockerfile); este caminho é onde o bind mount abaixo o sobrescreve.
       ASSISTANT_PROFILE_PATH: /app/config/assistente.md
+      # Lista de bloqueio eleitoral, mesmo esquema do perfil: a imagem traz um
+      # padrão e o bind mount abaixo o sobrescreve. Releitura a quente, então
+      # editar o arquivo no host vale no pedido seguinte, sem restart.
+      ELEITORAL_LISTA_PATH: ${ELEITORAL_LISTA_PATH:-/app/config/eleitoral.json}
 
     volumes:
       # Named volume — Docker gerencia internamente, sem caminho Windows
@@ -100,6 +104,10 @@ services:
       # instalar.bat extrai do padrão embutido na imagem na primeira execução.
       # Defina ASSISTANT_PROFILE_FILE no .env para apontar para outro caminho.
       - ${ASSISTANT_PROFILE_FILE:-./assistente.md}:/app/config/assistente.md:ro
+      # Lista de bloqueio eleitoral — editável no cliente sem rebuild, extraída
+      # da imagem pelo instalar.bat como o assistente.md. Validar depois de
+      # editar: docker compose exec servidor python -m core.eleitoral
+      - ${ELEITORAL_LISTA_FILE:-./eleitoral.json}:/app/config/eleitoral.json:ro
 
     depends_on:
       - waha

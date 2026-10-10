@@ -79,6 +79,10 @@ services:
       # Perfil editável da assistente — em dev normalmente aponta pro próprio
       # luzia.md do repo (o bind mount abaixo), mas pode ser trocado via .env.
       ASSISTANT_PROFILE_PATH: /app/config/assistente.md
+      # Lista de bloqueio eleitoral — em dev aponta pro próprio
+      # core/eleitoral.json do repo (o bind mount abaixo), para a edição
+      # valer sem rebuild.
+      ELEITORAL_LISTA_PATH: /app/config/eleitoral.json
 
     volumes:
       # Código-fonte — bind mount: mudanças em .py requerem apenas restart
@@ -96,6 +100,9 @@ services:
       # Perfil da assistente — editável sem restart (hot-reload por mtime em core/luzia).
       # Defina ASSISTANT_PROFILE_FILE no .env para apontar para outro arquivo.
       - ${ASSISTANT_PROFILE_FILE:-./core/luzia/luzia.md}:/app/config/assistente.md:ro
+      # Lista de bloqueio eleitoral — editável sem restart (hot-reload por
+      # mtime). Validar depois de editar: python -m core.eleitoral
+      - ${ELEITORAL_LISTA_FILE:-./core/eleitoral.json}:/app/config/eleitoral.json:ro
 
     depends_on:
       - waha
