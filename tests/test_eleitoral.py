@@ -1,3 +1,5 @@
+import pytest
+
 from core import eleitoral
 
 
@@ -134,3 +136,24 @@ def test_musicas_proibidas_exige_artista_tem_artistas_nao_vazio():
                 f"entrada {indice} ({entrada.titulos!r}) tem exige_artista=True "
                 "mas artistas vazio"
             )
+
+
+# --- Variantes de grafia do mesmo título (regressão de pedido real) ---
+
+@pytest.mark.parametrize("titulo", [
+    "Pra Não Dizer Que Não Falei das Flores",
+    "Pra não dizer que eu não falei das flores",
+    "Para não dizer que não falei das flores",
+    "PARA NÃO DIZER QUE EU NÃO FALEI DAS FLORES",
+])
+def test_vandre_bloqueia_todas_as_grafias_usuais(titulo):
+    """O casamento de título é por igualdade exata normalizada, então cada
+    grafia precisa estar na tupla `titulos`. Em 2026-10-09 um pedido real com
+    o "eu" passou direto: o título oficial não tem a palavra, mas é a forma
+    mais usada, e foi a que o LLM devolveu."""
+    assert eleitoral.eh_musica_proibida(titulo, "Geraldo Vandré") is True
+
+
+def test_vandre_bloqueia_pelo_titulo_mesmo_sem_artista():
+    # A entrada não é exige_artista: o título sozinho basta.
+    assert eleitoral.eh_musica_proibida("Pra não dizer que eu não falei das flores") is True

@@ -244,7 +244,14 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
     MusicaProibida(titulos=("Crucificados pelo Sistema",), artistas=("Ratos de Porão",)),
 
     # Geraldo Vandré
-    MusicaProibida(titulos=("Pra Não Dizer Que Não Falei das Flores",), artistas=("Geraldo Vandré",)),
+    # O título oficial não leva "eu", mas a grafia com "eu" é a mais usada — foi
+    # a que o LLM devolveu num pedido real e o casamento exato deixou passar.
+    MusicaProibida(titulos=(
+        "Pra Não Dizer Que Não Falei das Flores",
+        "Pra Não Dizer Que Eu Não Falei das Flores",
+        "Para Não Dizer Que Não Falei das Flores",
+        "Para Não Dizer Que Eu Não Falei das Flores",
+    ), artistas=("Geraldo Vandré",)),
     MusicaProibida(titulos=("Aroeira",), artistas=("Geraldo Vandré",)),
 
     # Raul Seixas
