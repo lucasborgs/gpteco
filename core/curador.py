@@ -69,6 +69,8 @@ REGRAS:
 
 7. CONTEXTO BRASILEIRO. Quando o artista for brasileiro ou a música tiver versão/relevância no Brasil, priorize esse ângulo. Para artistas internacionais, evite trivialidades restritas a EUA/Europa se houver um ângulo brasileiro significativo (ex: gravação de Caymmi por Sinatra, sucesso de Roupa Nova com cover de Phil Collins, regravações de hits internacionais por artistas nacionais).
 
+8. TEOR POLÍTICO, ELEITORAL E RELIGIOSO. A rádio envia esta curiosidade ao ouvinte em nome dela, então ela não toma partido. Não descreva a mensagem política, partidária, eleitoral ou religiosa da letra, nem a avalie. Isso NÃO desqualifica a faixa: escolha outro ângulo entre os da regra 1 — composição, gravação, lançamento, recepção, formação da banda. Música de protesto e música de fé entram normalmente, falando do disco e não do recado. Só responda tem_certeza=false se não sobrar nenhum ângulo neutro de que você tenha certeza.
+
 FORMATO DE SAÍDA: APENAS o objeto JSON puro. Sem prefixos como "json", sem blocos de código (```), sem texto antes ou depois. Estritamente:
 {"texto": "...", "tem_certeza": true|false}
 
