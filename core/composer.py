@@ -26,7 +26,7 @@ from collections import defaultdict
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from core import luzia
+from core import luzia, llm_compat
 
 load_dotenv()
 
@@ -146,8 +146,9 @@ def compor(situacao: str, contexto: dict | None = None, texto_ouvinte: str = "")
             f"Instrução: {instrucao}\n\n"
             "Escreva apenas a mensagem final, sem aspas e sem rótulos."
         )
-        resp = _client.chat.completions.create(
-            model=MODELO,
+        resp = llm_compat.completar(
+            _client,
+            MODELO,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},

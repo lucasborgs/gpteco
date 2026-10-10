@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from core import llm_compat
+
 load_dotenv()
 
 _GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
@@ -76,8 +78,13 @@ def analisar(texto_transcrito: str) -> MetadadosMusica:
     print(f"[LLM] Analisando: \"{texto_transcrito}\"")
 
     try:
-        response = _client.chat.completions.create(
-            model=LLM_MODEL,
+        # llm_compat: a família gpt-6 recusa `temperature`. Se LLM_MODEL
+        # apontar para um deles, a chamada repete sem o parâmetro e o modelo
+        # roda em temperature=1 — `seed` continua valendo, mas a saída deixa
+        # de ser determinística em caso borderline. Ver core/llm_compat.py.
+        response = llm_compat.completar(
+            _client,
+            LLM_MODEL,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system_prompt},
