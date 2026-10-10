@@ -157,3 +157,25 @@ def test_vandre_bloqueia_todas_as_grafias_usuais(titulo):
 def test_vandre_bloqueia_pelo_titulo_mesmo_sem_artista():
     # A entrada não é exige_artista: o título sozinho basta.
     assert eleitoral.eh_musica_proibida("Pra não dizer que eu não falei das flores") is True
+
+
+# --- Variante por artigo inicial omitido ---
+
+@pytest.mark.parametrize("titulo,artista", [
+    ("Tempo Não Para", "Cazuza"),
+    ("Caravanas", "Chico Buarque"),
+    ("Bêbado e a Equilibrista", "Elis Regina"),
+    ("Oitavo Dia", "Gonzaguinha"),
+])
+def test_bloqueia_titulo_sem_o_artigo_inicial(titulo, artista):
+    assert eleitoral.eh_musica_proibida(titulo, artista) is True
+
+
+def test_titulo_curto_sem_artigo_exige_artista():
+    """'Pulso' e 'Beco' sem o artigo viram palavra comum: entram como entrada
+    própria com exige_artista, para não barrarem faixa homônima de outro
+    artista — mesmo arranjo de 'Caminhando' para o título longo do Vandré."""
+    assert eleitoral.eh_musica_proibida("Pulso", "Titãs") is True
+    assert eleitoral.eh_musica_proibida("Pulso", "Banda Desconhecida") is False
+    assert eleitoral.eh_musica_proibida("Beco", "Os Paralamas do Sucesso") is True
+    assert eleitoral.eh_musica_proibida("Beco", "Outro Artista") is False

@@ -109,8 +109,8 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
     MusicaProibida(titulos=("Olha o Trem",), artistas=("Eduardo Costa",)),
 
     # Tião Carreiro & Pardinho
-    MusicaProibida(titulos=("O Prato do Dia",), artistas=("Tião Carreiro & Pardinho",)),
-    MusicaProibida(titulos=("A Viola e a Bíblia",), artistas=("Tião Carreiro & Pardinho",)),
+    MusicaProibida(titulos=("O Prato do Dia", "Prato do Dia"), artistas=("Tião Carreiro & Pardinho",)),
+    MusicaProibida(titulos=("A Viola e a Bíblia", "Viola e a Bíblia"), artistas=("Tião Carreiro & Pardinho",)),
 
     # João do Vale
     MusicaProibida(titulos=("Sina de Caboclo",), artistas=("João do Vale",)),
@@ -197,6 +197,8 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
     # Titãs
     MusicaProibida(titulos=("Polícia",), artistas=("Titãs",)),
     MusicaProibida(titulos=("O Pulso",), artistas=("Titãs",)),
+    # "Pulso" sem o artigo é palavra comum — exige artista, como em "Caminhando".
+    MusicaProibida(titulos=("Pulso",), artistas=("Titãs",), exige_artista=True),
     MusicaProibida(titulos=("Homem Primata",), artistas=("Titãs",)),
 
     # Capital Inicial
@@ -215,7 +217,7 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
         titulos=("Ninguém = Ninguém", "Ninguém Igual Ninguém"),
         artistas=("Engenheiros do Hawaii",),
     ),
-    MusicaProibida(titulos=("A Revolta dos Dândis",), artistas=("Engenheiros do Hawaii",)),
+    MusicaProibida(titulos=("A Revolta dos Dândis", "Revolta dos Dândis"), artistas=("Engenheiros do Hawaii",)),
     MusicaProibida(titulos=("Tribos e Tribos",), artistas=("Engenheiros do Hawaii",)),
 
     # Plebe Rude
@@ -228,7 +230,7 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
 
     # Cazuza
     MusicaProibida(titulos=("Burguesia",), artistas=("Cazuza",)),
-    MusicaProibida(titulos=("O Tempo Não Pára",), artistas=("Cazuza",)),
+    MusicaProibida(titulos=("O Tempo Não Pára", "Tempo Não Pára"), artistas=("Cazuza",)),
 
     # Biquini Cavadão
     MusicaProibida(titulos=("Zé Ninguém",), artistas=("Biquini Cavadão",)),
@@ -257,7 +259,7 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
     # Raul Seixas
     MusicaProibida(titulos=("Aluga-se",), artistas=("Raul Seixas",)),
     MusicaProibida(titulos=("Sociedade Alternativa",), artistas=("Raul Seixas",)),
-    MusicaProibida(titulos=("O Trem das Sete",), artistas=("Raul Seixas",)),
+    MusicaProibida(titulos=("O Trem das Sete", "Trem das Sete"), artistas=("Raul Seixas",)),
     MusicaProibida(titulos=("Cowboy Fora da Lei",), artistas=("Raul Seixas",)),
     MusicaProibida(titulos=("Mosca na Sopa",), artistas=("Raul Seixas",)),
 
@@ -267,7 +269,7 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
     MusicaProibida(titulos=("Construção",), artistas=("Chico Buarque",)),
     MusicaProibida(titulos=("Meu Caro Amigo",), artistas=("Chico Buarque",)),
     MusicaProibida(titulos=("Acorda Amor",), artistas=("Chico Buarque",)),
-    MusicaProibida(titulos=("As Caravanas",), artistas=("Chico Buarque",)),
+    MusicaProibida(titulos=("As Caravanas", "Caravanas"), artistas=("Chico Buarque",)),
 
     # Caetano Veloso
     MusicaProibida(titulos=("Alegria, Alegria", "Alegria Alegria"), artistas=("Caetano Veloso",)),
@@ -283,7 +285,10 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
     # Elis Regina (+ Belchior em "Como Nossos Pais")
     MusicaProibida(titulos=("Como Nossos Pais",), artistas=("Elis Regina", "Belchior")),
     MusicaProibida(
-        titulos=("O Bêbado e a Equilibrista", "O Bêbado e o Equilibrista"),
+        titulos=(
+            "O Bêbado e a Equilibrista", "O Bêbado e o Equilibrista",
+            "Bêbado e a Equilibrista", "Bêbado e o Equilibrista",
+        ),
         artistas=("Elis Regina",),
     ),
 
@@ -291,7 +296,7 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
     MusicaProibida(titulos=("Sujeito de Sorte",), artistas=("Belchior",)),
 
     # Gonzaguinha
-    MusicaProibida(titulos=("O Oitavo Dia",), artistas=("Gonzaguinha",)),
+    MusicaProibida(titulos=("O Oitavo Dia", "Oitavo Dia"), artistas=("Gonzaguinha",)),
     MusicaProibida(titulos=("Com a Perna No Mundo",), artistas=("Gonzaguinha",)),
     MusicaProibida(titulos=("Comportamento Geral",), artistas=("Gonzaguinha",)),
 
@@ -328,7 +333,7 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
     MusicaProibida(titulos=("Qual É?", "Qual É"), artistas=("Marcelo D2",), exige_artista=True),
 
     # MV Bill
-    MusicaProibida(titulos=("O Estilo",), artistas=("MV Bill",), exige_artista=True),
+    MusicaProibida(titulos=("O Estilo", "Estilo"), artistas=("MV Bill",), exige_artista=True),
 
     # Legião Urbana
     MusicaProibida(titulos=("Perfeição",), artistas=("Legião Urbana",), exige_artista=True),
@@ -343,7 +348,7 @@ MUSICAS_PROIBIDAS: list[MusicaProibida] = [
 
     # Os Paralamas do Sucesso
     MusicaProibida(titulos=("Selvagem",), artistas=("Os Paralamas do Sucesso",), exige_artista=True),
-    MusicaProibida(titulos=("O Beco",), artistas=("Os Paralamas do Sucesso",), exige_artista=True),
+    MusicaProibida(titulos=("O Beco", "Beco"), artistas=("Os Paralamas do Sucesso",), exige_artista=True),
 
     # Plebe Rude
     MusicaProibida(titulos=("Proteção",), artistas=("Plebe Rude",), exige_artista=True),
