@@ -975,6 +975,15 @@
         "Zé Keti"
       ],
       "exige_artista": true
+    },
+    {
+      "titulos": [
+        "Messias"
+      ],
+      "artistas": [
+        "Dead Fish"
+      ],
+      "exige_artista": true
     }
   ]
 }

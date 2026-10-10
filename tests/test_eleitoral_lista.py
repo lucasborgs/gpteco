@@ -212,8 +212,13 @@ def test_mensagem_de_erro_aponta_a_entrada():
 
 def test_lista_embutida_e_valida():
     """Guarda do arquivo versionado: ele é a rede de segurança de todos os
-    fallbacks acima, então um erro nele desarma o módulo inteiro."""
+    fallbacks acima, então um erro nele desarma o módulo inteiro.
+
+    Piso, e não contagem exata: a lista passou a ser editada como dado, e
+    travar o número faria cada música incluída quebrar um teste que não tem
+    nada a ver com ela. O que precisa ser pego aqui é o arquivo truncado,
+    esvaziado ou com a chave errada — não a 112ª entrada."""
     data = eleitoral._parse(eleitoral._JSON_PATH.read_text(encoding="utf-8"))
 
-    assert len(data["musicas_proibidas"]) == 111
-    assert len(data["candidatos"]) == 31
+    assert len(data["musicas_proibidas"]) >= 100
+    assert len(data["candidatos"]) >= 25
