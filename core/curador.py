@@ -12,7 +12,7 @@ nunca deve afetar a entrega da música.
 
 Variáveis de ambiente:
   OPENAI_API_KEY   : chave da OpenAI (obrigatória).
-  PILULAS_MODELO   : modelo a usar (padrão: gpt-4o).
+  PILULAS_MODELO   : modelo a usar (padrão: gpt-6.1-sol).
 """
 
 from __future__ import annotations
@@ -29,8 +29,13 @@ from core import luzia
 load_dotenv()
 
 _OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-PILULAS_MODELO: str = os.getenv("PILULAS_MODELO", "gpt-4o")
-# Personalização contextual usa modelo barato (só acrescenta 1 frase de ponte).
+# gpt-4o foi aposentado daqui: num teste de 10 faixas do repertório ele afirmou
+# que "Flor de Lis" era sobre a morte da esposa e da filha do Djavan, lenda
+# urbana que o próprio artista desmentiu — e a pílula vai ao ar em nome da
+# rádio. O gpt-6.1-sol foi o que trouxe mais fato verificável e não óbvio.
+PILULAS_MODELO: str = os.getenv("PILULAS_MODELO", "gpt-6.1-sol")
+# Personalização contextual segue no gpt-4o: ela só acrescenta 1 frase de ponte
+# a uma pílula já aprovada, não inventa fato novo — e é a chamada mais barata.
 PILULAS_CONTEXTO_MODELO: str = os.getenv("PILULAS_CONTEXTO_MODELO", "gpt-4o")
 
 # Modelos que rejeitaram `temperature` nesta execução. Os modelos de
