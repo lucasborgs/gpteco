@@ -216,8 +216,8 @@ def test_gate_de_canal_com_perfil_defasado_convida_e_registra_uma_vez(
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
     agora = datetime.now()
     historico = [
-        (agora - timedelta(hours=3), "texto"),
-        (agora - timedelta(hours=2), "texto"),
+        (agora - timedelta(minutes=50), "texto"),
+        (agora - timedelta(minutes=30), "texto"),
         (agora - timedelta(minutes=10), "texto"),
     ]
     registrar = Mock()

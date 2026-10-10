@@ -227,3 +227,112 @@ def test_historico_dias_customizado_e_repassado_a_consulta(monkeypatch):
     canal_voz.avaliar("5511999999999")
 
     mock_consulta.assert_called_once_with("5511999999999", 30)
+
+
+# --- Janela deslizante de contagem (CANAL_JANELA_MIN) -----------------------
+#
+# Antes desta janela o contador só zerava num pedido por voz, então textos
+# atendidos somavam para sempre dentro dos 90 dias de histórico: quem pedia
+# uma música por texto por semana topava no bloqueio na terceira semana. A
+# regra existe para conter rajada de pedidos por texto, não uso esparso.
+
+
+def test_tres_textos_espalhados_fora_da_janela_nao_bloqueiam(monkeypatch):
+    """O caso que motivou a janela: 3 textos atendidos, nenhum par dentro de
+    60 minutos do outro."""
+    canal_voz = _import_canal_voz_with_fake_psycopg2(monkeypatch)
+    historico = [
+        (_agora_menos(60 * 24 * 14), "texto"),  # 14 dias atrás
+        (_agora_menos(60 * 24 * 7), "texto"),   # 7 dias atrás
+        (_agora_menos(5), "texto"),             # agora
+    ]
+    monkeypatch.setattr(canal_voz.database, "pedidos_atendidos_por_canal", Mock(return_value=historico))
+
+    assert canal_voz.bloqueado("5511999999999") is False
+
+
+def test_dois_na_janela_mais_um_antigo_nao_bloqueia(monkeypatch):
+    """O terceiro mais antigo saiu da janela no instante do pedido novo —
+    sobram 2 contando, que é abaixo de CANAL_TEXTO_MAX."""
+    canal_voz = _import_canal_voz_with_fake_psycopg2(monkeypatch)
+    historico = [
+        (_agora_menos(90), "texto"),  # fora da janela do pedido de 10 min atrás
+        (_agora_menos(40), "texto"),
+        (_agora_menos(10), "texto"),
+    ]
+    monkeypatch.setattr(canal_voz.database, "pedidos_atendidos_por_canal", Mock(return_value=historico))
+
+    assert canal_voz.bloqueado("5511999999999") is False
+
+
+def test_tres_textos_dentro_da_janela_ainda_bloqueiam(monkeypatch):
+    """A janela não afrouxa o caso que a regra quer pegar: rajada."""
+    canal_voz = _import_canal_voz_with_fake_psycopg2(monkeypatch)
+    historico = [
+        (_agora_menos(50), "texto"),
+        (_agora_menos(30), "texto"),
+        (_agora_menos(2), "texto"),
+    ]
+    monkeypatch.setattr(canal_voz.database, "pedidos_atendidos_por_canal", Mock(return_value=historico))
+
+    assert canal_voz.bloqueado("5511999999999") is True
+
+
+def test_pedido_exatamente_na_borda_da_janela_nao_conta(monkeypatch):
+    """Corte é `> timestamp - janela`: 60 minutos exatos já saiu. Fixa a
+    borda para ela não virar ambígua numa mudança futura."""
+    canal_voz = _import_canal_voz_with_fake_psycopg2(monkeypatch)
+    historico = [
+        (_agora_menos(70), "texto"),
+        (_agora_menos(65), "texto"),
+        (_agora_menos(5), "texto"),  # 60 e 65 min de distância dos dois anteriores
+    ]
+    monkeypatch.setattr(canal_voz.database, "pedidos_atendidos_por_canal", Mock(return_value=historico))
+
+    assert canal_voz.bloqueado("5511999999999") is False
+
+
+def test_janela_customizada_e_respeitada(monkeypatch):
+    """Com janela de 24h, os mesmos 3 textos espalhados voltam a bloquear —
+    confirma que a janela é o que decide, não o acaso dos timestamps."""
+    canal_voz = _import_canal_voz_with_fake_psycopg2(monkeypatch, CANAL_JANELA_MIN="1440")
+    historico = [
+        (_agora_menos(600), "texto"),
+        (_agora_menos(300), "texto"),
+        (_agora_menos(10), "texto"),
+    ]
+    monkeypatch.setattr(canal_voz.database, "pedidos_atendidos_por_canal", Mock(return_value=historico))
+
+    assert canal_voz.bloqueado("5511999999999") is True
+
+
+def test_bloqueio_expirado_nao_reabre_ciclo_antigo(monkeypatch):
+    """Bloqueio de 2h atrás já expirou, e os textos que o fecharam não podem
+    voltar a contar: o ouvinte recomeça do zero."""
+    canal_voz = _import_canal_voz_with_fake_psycopg2(monkeypatch)
+    historico = [
+        (_agora_menos(140), "texto"),
+        (_agora_menos(130), "texto"),
+        (_agora_menos(120), "texto"),  # fechou o ciclo; bloqueio venceu 60 min atrás
+        (_agora_menos(5), "texto"),    # 1º de um ciclo novo
+    ]
+    monkeypatch.setattr(canal_voz.database, "pedidos_atendidos_por_canal", Mock(return_value=historico))
+
+    assert canal_voz.bloqueado("5511999999999") is False
+
+
+def test_voz_antiga_nao_reaparece_como_credito(monkeypatch):
+    """Voz zera o ciclo e marca o histórico; os 3 textos depois dela, dentro
+    da janela, fecham normalmente."""
+    canal_voz = _import_canal_voz_with_fake_psycopg2(monkeypatch)
+    historico = [
+        (_agora_menos(60 * 24 * 30), "voz"),  # 30 dias atrás
+        (_agora_menos(40), "texto"),
+        (_agora_menos(20), "texto"),
+        (_agora_menos(10), "texto"),
+    ]
+    monkeypatch.setattr(canal_voz.database, "pedidos_atendidos_por_canal", Mock(return_value=historico))
+
+    bloq, teve_voz = canal_voz.avaliar("5511999999999")
+    assert bloq is True
+    assert teve_voz is True

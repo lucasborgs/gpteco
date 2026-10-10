@@ -125,8 +125,8 @@ def test_tres_atendidos_por_texto_terceiro_ha_dez_minutos_recusa_apenas_voz(monk
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
     agora = datetime.now()
     historico = [
-        (agora - timedelta(hours=3), "texto"),
-        (agora - timedelta(hours=2), "texto"),
+        (agora - timedelta(minutes=50), "texto"),
+        (agora - timedelta(minutes=30), "texto"),
         (agora - timedelta(minutes=10), "texto"),
     ]
     registrar = Mock()
@@ -151,8 +151,8 @@ def test_mesmo_cenario_de_bloqueio_mas_com_path_ogg_e_processado(monkeypatch, tm
     path_ogg.write_bytes(b"fake")
     agora = datetime.now()
     historico = [
-        (agora - timedelta(hours=3), "texto"),
-        (agora - timedelta(hours=2), "texto"),
+        (agora - timedelta(minutes=50), "texto"),
+        (agora - timedelta(minutes=30), "texto"),
         (agora - timedelta(minutes=10), "texto"),
     ]
     metadados = _Metadados()
@@ -230,9 +230,9 @@ def test_linhas_com_canal_nulo_sao_ignoradas_pelo_fold(monkeypatch):
     agora = datetime.now()
     historico = [
         (agora - timedelta(hours=5), None),
-        (agora - timedelta(hours=4), "texto"),
+        (agora - timedelta(minutes=50), "texto"),
         (agora - timedelta(hours=3), ""),
-        (agora - timedelta(hours=2), "texto"),
+        (agora - timedelta(minutes=30), "texto"),
         (agora - timedelta(minutes=10), "texto"),
     ]
     resultado, registrar = _rodar_texto(pipeline, historico)
@@ -250,8 +250,8 @@ def test_sem_historico_de_voz_usa_mensagem_apenas_voz(monkeypatch):
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
     agora = datetime.now()
     historico = [
-        (agora - timedelta(hours=3), "texto"),
-        (agora - timedelta(hours=2), "texto"),
+        (agora - timedelta(minutes=50), "texto"),
+        (agora - timedelta(minutes=30), "texto"),
         (agora - timedelta(minutes=10), "texto"),
     ]
     resultado, _ = _rodar_texto(pipeline, historico)
@@ -268,8 +268,8 @@ def test_com_historico_de_voz_usa_mensagem_apenas_voz_retorno(monkeypatch):
     agora = datetime.now()
     historico = [
         (agora - timedelta(days=5), "voz"),
-        (agora - timedelta(hours=3), "texto"),
-        (agora - timedelta(hours=2), "texto"),
+        (agora - timedelta(minutes=50), "texto"),
+        (agora - timedelta(minutes=30), "texto"),
         (agora - timedelta(minutes=10), "texto"),
     ]
     resultado, registrar = _rodar_texto(pipeline, historico)
@@ -300,8 +300,8 @@ def test_canal_voz_ativado_false_deixa_gate_inerte(monkeypatch):
     monkeypatch.setattr(pipeline.canal_voz, "CANAL_VOZ_ATIVADO", False)
     agora = datetime.now()
     historico = [
-        (agora - timedelta(hours=3), "texto"),
-        (agora - timedelta(hours=2), "texto"),
+        (agora - timedelta(minutes=50), "texto"),
+        (agora - timedelta(minutes=30), "texto"),
         (agora - timedelta(minutes=10), "texto"),
     ]
     resultado, _ = _rodar_texto(pipeline, historico)

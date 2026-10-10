@@ -4,9 +4,15 @@ core/canal_voz.py
 Item C — canal obrigatório de voz.
 
 Regra (seção 8.1 da spec): a cada `CANAL_TEXTO_MAX` pedidos **atendidos** por
-texto, o texto fecha por `CANAL_BLOQUEIO_MIN` minutos; qualquer pedido
-atendido por voz zera o ciclo. Sem o cooldown de 6h ativo no cliente
-(`DISABLE_COOLDOWN=true`), este é o único freio por ouvinte do sistema.
+texto dentro de uma janela de `CANAL_JANELA_MIN` minutos, o texto fecha por
+`CANAL_BLOQUEIO_MIN` minutos; qualquer pedido atendido por voz zera o ciclo.
+Sem o cooldown de 6h ativo no cliente (`DISABLE_COOLDOWN=true`), este é o
+único freio por ouvinte do sistema.
+
+Só conta pedido **atendido** — o que entrou na fila do ZaraRadio. Pedido
+recusado (não identificado, fora do repertório, eleitoral) não aproxima
+ninguém do bloqueio: a regra empurra para a voz quem está sendo atendido, não
+pune quem não está sendo entendido.
 
 O fold é **derivado** do histórico de `dim_pedidos` a cada chamada — não há
 estado em memória. O contêiner do cliente já reiniciou sozinho por OOM, e
@@ -51,14 +57,23 @@ from core import database
 # Desliga o gate inteiro sem rebuild (seção 10 da spec).
 CANAL_VOZ_ATIVADO: bool = os.getenv("CANAL_VOZ_ATIVADO", "true").strip().lower() == "true"
 
-# Pedidos atendidos por texto, no mesmo ciclo, antes do texto fechar.
+# Pedidos atendidos por texto, dentro da janela, antes do texto fechar.
 CANAL_TEXTO_MAX: int = int(os.getenv("CANAL_TEXTO_MAX", "3"))
 
 # Duração do bloqueio de texto, em minutos, a partir do pedido que fechou o ciclo.
 CANAL_BLOQUEIO_MIN: int = int(os.getenv("CANAL_BLOQUEIO_MIN", "60"))
 
-# Janela de consulta do histórico — só limite de consulta, não parte da regra:
-# o fold é correto desde que a janela cubra o ciclo corrente do ouvinte.
+# Janela deslizante de contagem, em minutos: pedido por texto mais antigo que
+# isto não conta mais para fechar o ciclo. Sem ela o contador só zerava num
+# pedido por voz, e quem pedia uma música por texto por semana topava no
+# bloqueio na terceira semana — acúmulo sem relação com o que a regra quer
+# coibir, que é a rajada de pedidos por texto.
+CANAL_JANELA_MIN: int = int(os.getenv("CANAL_JANELA_MIN", "60"))
+
+# Janela de consulta do histórico. NÃO é a janela da contagem (essa é
+# CANAL_JANELA_MIN, aplicada pelo fold): esta precisa ser longa porque
+# `tem_historico_de_voz` olha a vida inteira do ouvinte para escolher entre
+# `apenas_voz` e `apenas_voz_retorno` (seção 8.7 da spec).
 CANAL_HISTORICO_DIAS: int = int(os.getenv("CANAL_HISTORICO_DIAS", "90"))
 
 
@@ -68,33 +83,43 @@ def _fold(historico: list[tuple[datetime, str]]) -> tuple[bool, bool]:
     cronológica crescente, só pedidos atendidos) e devolve
     `(bloqueado, tem_historico_de_voz)`.
 
-    Pseudocódigo da spec, seguido ao pé da letra:
+    Pseudocódigo da spec, com a janela deslizante de CANAL_JANELA_MIN (ver a
+    constante) no lugar do contador que só zerava na voz:
 
-        contador = 0
+        recentes = []            # timestamps dos textos que ainda contam
         bloqueio_ate = None
         for pedido in pedidos_atendidos_asc:
             if pedido.canal == "voz":
-                contador, bloqueio_ate = 0, None      # voz zera tudo
+                recentes, bloqueio_ate = [], None     # voz zera tudo
             elif pedido.canal == "texto":
-                contador += 1
-                if contador >= CANAL_TEXTO_MAX:
+                descarta de `recentes` o que for anterior a
+                    pedido.timestamp - CANAL_JANELA_MIN
+                recentes.append(pedido.timestamp)
+                if len(recentes) >= CANAL_TEXTO_MAX:
                     bloqueio_ate = pedido.timestamp + CANAL_BLOQUEIO_MIN
-                    contador = 0                      # começa um novo ciclo
+                    recentes = []                     # começa um novo ciclo
         bloqueado = bloqueio_ate is not None and agora < bloqueio_ate
+
+    O corte é relativo ao timestamp de cada pedido, não a `agora`: o fold
+    reconstrói se o ciclo fechou quando fechou. Bloqueio que já expirou
+    continua aparecendo como expirado, e não como ciclo em aberto.
     """
-    contador = 0
+    recentes: list[datetime] = []
     bloqueio_ate: datetime | None = None
     teve_voz = False
+    janela = timedelta(minutes=CANAL_JANELA_MIN)
 
     for timestamp, canal in historico:
         if canal == "voz":
-            contador, bloqueio_ate = 0, None
+            recentes, bloqueio_ate = [], None
             teve_voz = True
         elif canal == "texto":
-            contador += 1
-            if contador >= CANAL_TEXTO_MAX:
+            corte = timestamp - janela
+            recentes = [t for t in recentes if t > corte]
+            recentes.append(timestamp)
+            if len(recentes) >= CANAL_TEXTO_MAX:
                 bloqueio_ate = timestamp + timedelta(minutes=CANAL_BLOQUEIO_MIN)
-                contador = 0
+                recentes = []
         # qualquer outro valor — None, "", lixo — é ignorado pelo fold
 
     agora = datetime.now()
