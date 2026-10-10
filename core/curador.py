@@ -33,6 +33,13 @@ PILULAS_MODELO: str = os.getenv("PILULAS_MODELO", "gpt-4o")
 # Personalização contextual usa modelo barato (só acrescenta 1 frase de ponte).
 PILULAS_CONTEXTO_MODELO: str = os.getenv("PILULAS_CONTEXTO_MODELO", "gpt-4o")
 
+# Modelos que rejeitaram `temperature` nesta execução. Os modelos de
+# raciocínio mais novos (ex.: gpt-6-luna) só aceitam o padrão (1) e devolvem
+# 400 com qualquer outro valor; os anteriores aceitam. Em vez de manter uma
+# lista de nomes de modelo, que envelhece a cada lançamento, descobrimos na
+# primeira chamada e lembramos — ver _completar().
+_SEM_TEMPERATURE: set[str] = set()
+
 # Cliente singleton — None se não houver chave da OpenAI configurada.
 _client: OpenAI | None = OpenAI(api_key=_OPENAI_API_KEY) if _OPENAI_API_KEY else None
 if _client:
@@ -84,6 +91,27 @@ Saída: {"texto": "", "tem_certeza": false}
 """.strip()
 
 
+def _completar(modelo: str, temperature: float, **kwargs):
+    """Chama o chat completions tolerando modelo que não aceita `temperature`.
+
+    Tenta com o valor pedido; se a API recusar o parâmetro, repete sem ele e
+    anota o modelo em _SEM_TEMPERATURE para as próximas chamadas do processo.
+    O valor baixo importa (pílula é fato que vai ao ar — ver antialucinação no
+    prompt), então não se abre mão dele nos modelos que o aceitam.
+    """
+    if modelo not in _SEM_TEMPERATURE:
+        try:
+            return _client.chat.completions.create(
+                model=modelo, temperature=temperature, **kwargs
+            )
+        except Exception as e:
+            if "temperature" not in str(e):
+                raise
+            print(f"[CURADOR] {modelo} não aceita temperature — repetindo sem o parâmetro.")
+            _SEM_TEMPERATURE.add(modelo)
+    return _client.chat.completions.create(model=modelo, **kwargs)
+
+
 def gerar_pilula(artista: str, musica: str) -> str | None:
     """
     Gera uma curiosidade curta sobre a música via OpenAI gpt-4o.
@@ -104,14 +132,14 @@ def gerar_pilula(artista: str, musica: str) -> str | None:
     print(f"[CURADOR] Gerando pílula para: \"{entrada}\"")
 
     try:
-        response = _client.chat.completions.create(
-            model=PILULAS_MODELO,
+        response = _completar(
+            PILULAS_MODELO,
+            0.35,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT_CURADOR},
                 {"role": "user", "content": entrada},
             ],
-            temperature=0.35,
         )
     except Exception as e:
         print(f"[CURADOR] Falha na chamada ao LLM: {e}")
@@ -181,13 +209,13 @@ def personalizar_pilula(pilula_base: str, texto_ouvinte: str) -> str:
             f'Mensagem do ouvinte: "{texto_ouvinte}"\n\n'
             "Devolva a curiosidade (com a ponte ao final, se couber). Sem aspas, sem rótulos."
         )
-        response = _client.chat.completions.create(
-            model=PILULAS_CONTEXTO_MODELO,
+        response = _completar(
+            PILULAS_CONTEXTO_MODELO,
+            0.5,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            temperature=0.5,
             max_tokens=220,
         )
     except Exception as e:
