@@ -241,6 +241,36 @@ Recreating the service is necessary to load changes from `.env`; a restart alone
 
 The LangGraph conversation experiment remains isolated on `codex/conversational-experiment`; it is not included in these changes based on `main`.
 
+### PO Token provider compatibility
+
+The `bgutil-pot` HTTP server image and the Python `bgutil-ytdlp-pot-provider`
+plugin are both pinned to **1.3.2**. Keep them aligned: the provider's
+[1.3.2 release](https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/tag/1.3.2)
+fixes token generation for YouTube sessions where metadata and token requests
+succeed but media downloads return HTTP 403.
+
+An existing client with plugin 1.3.2 and provider 1.3.1 can update only the
+`bgutil-pot` image to `brainicism/bgutil-ytdlp-pot-provider:1.3.2` in its existing
+`docker-compose.dist.yml`. Back up that file first, validate it with
+`docker compose -f docker-compose.dist.yml config --quiet`, then run:
+
+```bash
+docker compose -f docker-compose.dist.yml pull bgutil-pot
+docker compose -f docker-compose.dist.yml up -d --no-deps --force-recreate bgutil-pot
+docker compose -f docker-compose.dist.yml logs --no-color --timestamps --tail=30 bgutil-pot
+```
+
+These commands target the token provider and retain the client's current
+server image. Do not deploy this repository's whole Compose file just for
+this maintenance. Validate media access after the update: a successful
+`yt-dlp --simulate` run only verifies extraction and format selection.
+Use an in-memory HTTP range request to check the selected media URL without
+saving audio or sending a listener request through the radio queue.
+
+For rollback, restore the backed-up Compose file and recreate only
+`bgutil-pot` again. The previous provider image should remain available
+locally; avoid removing it until verification is complete.
+
 ---
 
 ## Results

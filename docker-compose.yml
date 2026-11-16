@@ -108,7 +108,7 @@ services:
   # O YouTube exige um PO Token na requisição de mídia. Sem este serviço o
   # yt-dlp não consegue baixar nada e todo pedido novo vira erro_tecnico.
   bgutil-pot:
-    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.2
     container_name: bgutil-pot
     restart: unless-stopped
     networks:

@@ -14,7 +14,8 @@ audioop-lts~=0.2  # compatibilidade do pydub com Python 3.13+
 yt-dlp[default,deno]>=2025.1  # Atualizado para a versão mais recente durante o build da imagem
 # Provedor de PO Token: o YouTube exige o token na requisição de mídia (GVS).
 # Conversa com o serviço bgutil-pot definido no docker-compose.
-bgutil-ytdlp-pot-provider~=1.3
+# Keep the plugin and the HTTP server image on the same version.
+bgutil-ytdlp-pot-provider==1.3.2
 
 # === Servidor webhook ===
 fastapi~=0.131
