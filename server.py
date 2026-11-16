@@ -53,7 +53,7 @@ from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from core import composer, config_radio, curador, database, queue_watcher, relatorio, whatsapp
+from core import composer, config_radio, curador, database, queue_watcher, relatorio, waha_monitor, whatsapp
 from core.pipeline import processar_pedido
 
 app = FastAPI(title="Agente Virtual Musical", version="1.0.0")
@@ -332,21 +332,26 @@ async def _loop_monitor_sessao() -> None:
                 print(f"[MONITOR] Sessão WAHA com status '{status}' — tentando reconexão automática...")
 
                 reconectou = False
+                status_atual = status
                 for tentativa in range(1, MAX_RECONEXAO + 1):
                     print(f"[MONITOR] Tentativa de reconexão {tentativa}/{MAX_RECONEXAO}...")
                     try:
                         headers = {"X-Api-Key": WAHA_API_KEY} if WAHA_API_KEY else {}
                         async with httpx.AsyncClient(timeout=15) as client:
-                            resp = await client.put(
-                                f"{WAHA_URL}/api/sessions/{WAHA_SESSION}/restart",
+                            acao, resp = await waha_monitor.solicitar_reconexao(
+                                client,
+                                waha_url=WAHA_URL,
+                                session=WAHA_SESSION,
+                                status=status_atual,
                                 headers=headers,
                             )
-                        print(f"[MONITOR] Restart API retornou HTTP {resp.status_code}")
+                        print(f"[MONITOR] {acao.title()} API retornou HTTP {resp.status_code}")
                     except Exception as e:
-                        print(f"[MONITOR] Erro ao chamar restart: {e}")
+                        print(f"[MONITOR] Erro ao solicitar reconexão: {e}")
 
                     await asyncio.sleep(ESPERA_POS_RESTART)
                     novo_status = await _verificar_status_sessao()
+                    status_atual = novo_status
 
                     if novo_status in ("WORKING", "CONNECTED"):
                         print(f"[MONITOR] Reconexão bem-sucedida na tentativa {tentativa}!")
