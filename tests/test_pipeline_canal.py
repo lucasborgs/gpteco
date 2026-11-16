@@ -328,3 +328,70 @@ def test_gate_consulta_pedidos_atendidos_por_canal_com_numero_e_janela(monkeypat
         pipeline.processar_pedido("5511999999999", texto="toca Evidências")
 
     consulta.assert_called_once_with("5511999999999", pipeline.canal_voz.CANAL_HISTORICO_DIAS)
+
+
+@pytest.mark.parametrize("canal", ["texto", "voz"])
+@pytest.mark.parametrize("falha", ["registro", "entrega", "mensagem"])
+def test_resultado_respeita_limite_da_entrega(monkeypatch, tmp_path, canal, falha):
+    """Somente falhas anteriores à entrega podem informar fracasso ao ouvinte."""
+    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
+    monkeypatch.setattr(pipeline, "TEMP_DIR", str(tmp_path / "temp"))
+    acervo = tmp_path / "musica.mp3"
+    acervo.write_bytes(b"musica")
+    audio = tmp_path / "ouvinte.ogg"
+    audio.write_bytes(b"voz")
+    metadados = _Metadados()
+    registrar = Mock(side_effect=RuntimeError("banco indisponivel") if falha == "registro" else None)
+    destino = tmp_path / "fila" / "pedido.mp3"
+    if falha == "mensagem":
+        monkeypatch.setattr(pipeline.config_radio, "MSG_SUCESSO", "{campo_inexistente}")
+
+    def enfileirar(origem):
+        if falha == "entrega":
+            raise RuntimeError("fila indisponivel")
+        destino.parent.mkdir(exist_ok=True)
+        destino.write_bytes(pipeline.Path(origem).read_bytes())
+        return str(destino)
+
+    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
+         patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
+         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
+         patch.object(pipeline.database, "buscar_musica", return_value=str(acervo)), \
+         patch.object(pipeline.database, "registrar_pedido", registrar), \
+         patch.object(pipeline.stt, "transcrever", return_value="toca Evidências"), \
+         patch.object(pipeline.audio_mixer, "mixar", return_value=str(acervo)), \
+         patch.object(pipeline.queue_watcher, "enfileirar", side_effect=enfileirar) as entregar:
+        resultado = pipeline.processar_pedido(
+            "5511999999999",
+            path_ogg=str(audio) if canal == "voz" else None,
+            texto="toca Evidências" if canal == "texto" else None,
+        )
+
+    if falha != "registro":
+        assert not destino.exists()
+        assert resultado["sucesso"] is False
+        assert resultado["path_audio"] is None
+        registrar.assert_called_once_with(
+            "5511999999999", metadados.artista, metadados.musica, sucesso=False,
+            motivo_rejeicao="erro_tecnico", canal=canal,
+        )
+        if falha == "mensagem":
+            entregar.assert_not_called()
+        else:
+            entregar.assert_called_once()
+        return
+
+    assert destino.read_bytes() == b"musica"
+    assert resultado["sucesso"] is True
+    assert resultado["path_audio"] == str(destino)
+    assert resultado["artista"] == metadados.artista
+    assert resultado["musica"] == metadados.musica
+    assert resultado["mensagem"] == pipeline.config_radio.MSG_SUCESSO.format(
+        artista=metadados.artista, musica=metadados.musica,
+    )
+    assert resultado["codigo"] == "registro_pendente"
+    entregar.assert_called_once()
+    registrar.assert_called_once_with(
+        "5511999999999", metadados.artista, metadados.musica,
+        genero=metadados.genero, canal=canal,
+    )

@@ -233,6 +233,10 @@ def processar_pedido(
             # A música do acervo vai direto para a fila sem overlay.
             path_entrega = file_path
 
+        # Prepara a confirmação antes da entrega: erro no perfil não pode
+        # transformar uma música já enfileirada em um falso fracasso.
+        msg = config_radio.MSG_SUCESSO.format(artista=metadados.artista, musica=metadados.musica)
+
         # --- Etapa 6: Entrega ao ZaraRadio (via fila gerenciada) ---
         _log_etapa(6, "Entrega ao ZaraRadio")
 
@@ -256,9 +260,17 @@ def processar_pedido(
         # Registrado APÓS enfileirar bem-sucedido: cooldown só ativa se a música
         # foi entregue na fila. Se enfileirar lançar exceção, o except registra
         # o pedido como erro_tecnico (sem ativar cooldown para o ouvinte).
-        database.registrar_pedido(numero, metadados.artista, metadados.musica, genero=metadados.genero, canal=canal)
+        codigo = None
+        try:
+            database.registrar_pedido(numero, metadados.artista, metadados.musica, genero=metadados.genero, canal=canal)
+        except Exception as e:
+            # A entrega já aconteceu e não é desfeita por uma falha no banco.
+            # Não registra rejeição nem pede ao ouvinte para repetir o pedido.
+            # O código distingue a falha de persistência para os consumidores;
+            # o cooldown no banco só fica disponível se o registro for salvo.
+            print(f"[PIPELINE] Pedido entregue à fila, mas registro no banco falhou: {e}")
+            codigo = "registro_pendente"
 
-        msg = config_radio.MSG_SUCESSO.format(artista=metadados.artista, musica=metadados.musica)
         _log_separador(f"Concluído: {nome_saida}")
         return _resultado(
             True,
@@ -267,6 +279,7 @@ def processar_pedido(
             artista=metadados.artista,
             musica=metadados.musica,
             is_pedido_explicito=metadados.is_pedido_explicito,
+            codigo=codigo,
         )
 
     except (downloader.yt_throttle.FilaCheia, downloader.yt_throttle.EsperaExcedida) as e:
