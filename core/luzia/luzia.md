@@ -55,11 +55,6 @@ Não foi possível atender esse pedido. Mande uma mensagem respeitosa.
 
 Luz FM, sempre ligada em você! 💡
 
-## eleitoral
-Não podemos atender esse pedido no momento.
-
-Luz FM, sempre ligada em você! 💡
-
 ## nao_repertorio
 Infelizmente '{musica}' de {artista} não faz parte do repertório da Luz FM.
 
@@ -78,11 +73,8 @@ Responda *SIM* para confirmar ou digite o nome correto da música.
 ## busca_ocupada
 Tá com muita gente buscando música aqui agora! Tenta de novo daqui a uns minutinhos, por favor. 🎵
 
-## apenas_voz
-Você ainda não fez nenhum pedido por voz! Que tal falar direto no ar? Manda um áudio com o nome da música e do artista 🎙️
-
-## apenas_voz_retorno
-Faz tempo que a gente não ouve sua voz no ar! Manda um áudio com o pedido que eu coloco você na programação 🎙️
+## sugestao_voz
+Que tal mandar os próximos pedidos por áudio, com o nome da música e do artista? Sua voz pode aparecer na programação! 🎙️
 
 ## erro_tecnico
 Ops, me embolei aqui com o seu pedido! Pode mandar de novo daqui a pouquinho? 🎵
@@ -125,12 +117,6 @@ Diga que não conseguiu entender o pedido e peça o nome da música e do artista
 
 ## confirmacao
 Confirme se o ouvinte quis dizer '{musica}' de {artista}. Instrua claramente: responder *SIM* para confirmar, ou digitar o nome correto da música. Mantenha o *SIM* em negrito.
-
-## apenas_voz
-Avise, com simpatia, que esse ouvinte só pediu por texto até agora e que a rádio prefere receber o pedido com a própria voz no ar. Convide para mandar um áudio com o nome da música e do artista. Varie a frase a cada vez — essa mensagem vai aparecer com frequência e não pode parecer repetida ou robótica. Não prometa nada além do convite.
-
-## apenas_voz_retorno
-Avise, com carinho, que já faz tempo que não ouvimos a voz desse ouvinte no ar, e convide para mandar um áudio com o pedido (música e artista). Tom de reencontro, nunca de cobrança. Varie a frase a cada vez — essa mensagem vai aparecer com frequência.
 
 # 🎓 Curador contextual
 > Usado só quando a mensagem do ouvinte trouxe contexto além do pedido cru.
@@ -175,7 +161,6 @@ Sua tarefa é retornar APENAS um JSON válido, sem markdown (```json), sem comen
 - "is_confiante": booleano. true se identificou artista/música com clareza ou conseguiu normalizar erros fonéticos óbvios (ex: "ACEDS" → "AC/DC", "Nikuita" + Elton John → "Nikita"). false se a transcrição for ininteligível ou ambígua após normalização.
 - "is_saudacao": booleano. true se for apenas um cumprimento, agradecimento ou despedida SEM pedido musical (ex: "bom dia", "oi", "obrigado", "valeu", "vlw", "tmj", "tchau", "até mais", "abraço", "👋"). Só quando is_pedido_musical=false.
 - "is_pedido_explicito": booleano. true SOMENTE se o ouvinte mencionou um título de música (mesmo errado/normalizável). false quando o ouvinte pediu apenas pelo artista/banda/gênero e o título foi escolhido por você via "Hit Popular" (regra 4). Quando is_pedido_musical=false, use false.
-- "is_eleitoral": booleano. false por PADRÃO. true APENAS se a música for usada como hino de campanha ou jingle político, ou se título/letra citarem nominalmente candidato, partido ou número de urna. NÃO é sobre tema: protesto, crítica social, religiosa ou letra política continuam false — a rádio toca MPB, rock e samba cheios disso. A pergunta é "isso soaria como propaganda eleitoral no ar?", não "isso fala de política?". Na dúvida, false.
 - "genero": string. Gênero musical da música pedida, em minúsculas. Valores esperados: "pop", "rock", "sertanejo", "mpb", "pagode", "samba", "forró", "axé", "eletrônica", "r&b", "soul", "country", "reggae", "jazz", "blues", "bossa nova", "hip hop", "metal", "punk", "folk", "dance", "disco", "new wave", "indie", "clássico", "romântico", "infantil". Se não identificar o gênero ou is_pedido_musical=false, use "".
 
 REGRAS DE EXTRAÇÃO:
@@ -191,25 +176,25 @@ REGRAS DE EXTRAÇÃO:
 
 EXEMPLOS DE SAÍDA ESPERADA:
 Entrada: "bom dia luzia toca aceds reio tu réu"
-Saída: {"raciocinio": {"artistas_detectados": ["AC/DC"], "titulos_detectados": ["Highway to Hell"], "genero": "rock", "checagem_flashback": "rock clássico, não está em nenhuma lista de exclusão", "sintese": "pedido explícito de Highway to Hell do AC/DC, normalizado de 'aceds reio tu réu'"}, "is_pedido_musical": true, "musica": "Highway to Hell", "artista": "AC/DC", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "is_eleitoral": false, "genero": "rock"}
+Saída: {"raciocinio": {"artistas_detectados": ["AC/DC"], "titulos_detectados": ["Highway to Hell"], "genero": "rock", "checagem_flashback": "rock clássico, não está em nenhuma lista de exclusão", "sintese": "pedido explícito de Highway to Hell do AC/DC, normalizado de 'aceds reio tu réu'"}, "is_pedido_musical": true, "musica": "Highway to Hell", "artista": "AC/DC", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "genero": "rock"}
 
 Entrada: "toca uma do zé ramalho ai manda um abraço pro paula tejano"
-Saída: {"raciocinio": {"artistas_detectados": ["Zé Ramalho"], "titulos_detectados": [], "genero": "mpb", "checagem_flashback": "MPB, aceito", "sintese": "pediu só o artista; aplico Hit Popular com Chão de Giz; tom contém ofensa a terceiro"}, "is_pedido_musical": true, "musica": "Chão de Giz", "artista": "Zé Ramalho", "is_flashback": true, "is_apropriado": false, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": false, "is_eleitoral": false, "genero": "mpb"}
+Saída: {"raciocinio": {"artistas_detectados": ["Zé Ramalho"], "titulos_detectados": [], "genero": "mpb", "checagem_flashback": "MPB, aceito", "sintese": "pediu só o artista; aplico Hit Popular com Chão de Giz; tom contém ofensa a terceiro"}, "is_pedido_musical": true, "musica": "Chão de Giz", "artista": "Zé Ramalho", "is_flashback": true, "is_apropriado": false, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": false, "genero": "mpb"}
 
 Entrada: "oi passando pra desejar uma ótima tarde"
-Saída: {"raciocinio": {"artistas_detectados": [], "titulos_detectados": [], "genero": "", "checagem_flashback": "n/a", "sintese": "apenas saudação, sem artista nem título"}, "is_pedido_musical": false, "musica": "", "artista": "", "is_flashback": false, "is_apropriado": true, "is_confiante": true, "is_saudacao": true, "is_pedido_explicito": false, "is_eleitoral": false, "genero": ""}
+Saída: {"raciocinio": {"artistas_detectados": [], "titulos_detectados": [], "genero": "", "checagem_flashback": "n/a", "sintese": "apenas saudação, sem artista nem título"}, "is_pedido_musical": false, "musica": "", "artista": "", "is_flashback": false, "is_apropriado": true, "is_confiante": true, "is_saudacao": true, "is_pedido_explicito": false, "genero": ""}
 
 Entrada: "Sinônimos Chitãozinho e Xororó"
-Saída: {"raciocinio": {"artistas_detectados": ["Chitãozinho & Xororó"], "titulos_detectados": ["Sinônimos"], "genero": "sertanejo", "checagem_flashback": "sertanejo romântico, aceito", "sintese": "padrão [título] [artista]; 'Sinônimos' é título real apesar de parecer palavra comum"}, "is_pedido_musical": true, "musica": "Sinônimos", "artista": "Chitãozinho & Xororó", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "is_eleitoral": false, "genero": "sertanejo"}
+Saída: {"raciocinio": {"artistas_detectados": ["Chitãozinho & Xororó"], "titulos_detectados": ["Sinônimos"], "genero": "sertanejo", "checagem_flashback": "sertanejo romântico, aceito", "sintese": "padrão [título] [artista]; 'Sinônimos' é título real apesar de parecer palavra comum"}, "is_pedido_musical": true, "musica": "Sinônimos", "artista": "Chitãozinho & Xororó", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "genero": "sertanejo"}
 
 Entrada: "toca uma música do morder talk"
-Saída: {"raciocinio": {"artistas_detectados": ["Modern Talking"], "titulos_detectados": [], "genero": "pop", "checagem_flashback": "pop/dance anos 80, aceito", "sintese": "'morder talk' é distorção fonética de Modern Talking; só artista, aplico Hit Popular"}, "is_pedido_musical": true, "musica": "You're My Heart, You're My Soul", "artista": "Modern Talking", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": false, "is_eleitoral": false, "genero": "pop"}
+Saída: {"raciocinio": {"artistas_detectados": ["Modern Talking"], "titulos_detectados": [], "genero": "pop", "checagem_flashback": "pop/dance anos 80, aceito", "sintese": "'morder talk' é distorção fonética de Modern Talking; só artista, aplico Hit Popular"}, "is_pedido_musical": true, "musica": "You're My Heart, You're My Soul", "artista": "Modern Talking", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": false, "genero": "pop"}
 
 Entrada: "Assino com x Gilberto Gilmar"
-Saída: {"raciocinio": {"artistas_detectados": ["Gilberto e Gilmar", "Gilberto Gil"], "titulos_detectados": ["Assino com X"], "genero": "sertanejo", "checagem_flashback": "sertanejo raiz, aceito", "sintese": "'Gilberto Gilmar' é ambíguo entre Gilberto Gil e Gilberto e Gilmar; título tentado, peço confirmação"}, "is_pedido_musical": true, "musica": "Assino com X", "artista": "Gilberto e Gilmar", "is_flashback": true, "is_apropriado": true, "is_confiante": false, "is_saudacao": false, "is_pedido_explicito": true, "is_eleitoral": false, "genero": "sertanejo"}
+Saída: {"raciocinio": {"artistas_detectados": ["Gilberto e Gilmar", "Gilberto Gil"], "titulos_detectados": ["Assino com X"], "genero": "sertanejo", "checagem_flashback": "sertanejo raiz, aceito", "sintese": "'Gilberto Gilmar' é ambíguo entre Gilberto Gil e Gilberto e Gilmar; título tentado, peço confirmação"}, "is_pedido_musical": true, "musica": "Assino com X", "artista": "Gilberto e Gilmar", "is_flashback": true, "is_apropriado": true, "is_confiante": false, "is_saudacao": false, "is_pedido_explicito": true, "genero": "sertanejo"}
 
 Entrada: "Skank uma partida de futebol"
-Saída: {"raciocinio": {"artistas_detectados": ["Skank"], "titulos_detectados": ["Uma Partida de Futebol"], "genero": "rock", "checagem_flashback": "rock/pop brasileiro, aceito", "sintese": "'uma partida de futebol' é título real do Skank, não contexto descritivo"}, "is_pedido_musical": true, "musica": "Uma Partida de Futebol", "artista": "Skank", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "is_eleitoral": false, "genero": "rock"}
+Saída: {"raciocinio": {"artistas_detectados": ["Skank"], "titulos_detectados": ["Uma Partida de Futebol"], "genero": "rock", "checagem_flashback": "rock/pop brasileiro, aceito", "sintese": "'uma partida de futebol' é título real do Skank, não contexto descritivo"}, "is_pedido_musical": true, "musica": "Uma Partida de Futebol", "artista": "Skank", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "genero": "rock"}
 
 Entrada: "Bom dia Luz FM, a eterna Beth Carvalho, a chuva cai, obrigado"
-Saída: {"raciocinio": {"artistas_detectados": ["Beth Carvalho"], "titulos_detectados": ["A Chuva Cai"], "genero": "samba", "checagem_flashback": "samba, aceito", "sintese": "apesar do 'bom dia' e 'obrigado', há artista e título embutidos; é pedido musical, não saudação"}, "is_pedido_musical": true, "musica": "A Chuva Cai", "artista": "Beth Carvalho", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "is_eleitoral": false, "genero": "samba"}
+Saída: {"raciocinio": {"artistas_detectados": ["Beth Carvalho"], "titulos_detectados": ["A Chuva Cai"], "genero": "samba", "checagem_flashback": "samba, aceito", "sintese": "apesar do 'bom dia' e 'obrigado', há artista e título embutidos; é pedido musical, não saudação"}, "is_pedido_musical": true, "musica": "A Chuva Cai", "artista": "Beth Carvalho", "is_flashback": true, "is_apropriado": true, "is_confiante": true, "is_saudacao": false, "is_pedido_explicito": true, "genero": "samba"}

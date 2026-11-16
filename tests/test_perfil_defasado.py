@@ -1,18 +1,4 @@
-"""
-tests/test_perfil_defasado.py
-
-O assistente.md vive no PC do cliente e congela no estado em que foi criado:
-num release que acrescente uma mensagem nova, o arquivo da rádio NÃO vai ter a
-seção correspondente (não sobrescrevemos o arquivo dele, senão apagaríamos as
-edições da rádio). Estes testes garantem que esse cenário degrada com
-elegância, em vez de virar erro técnico.
-
-É a regressão de um defeito real: `apenas_voz` e `apenas_voz_retorno` tinham
-entrado em luzia._MSG_SLUG, que é estrito, e um perfil sem a seção levantava
-AttributeError dentro do gate de canal. O ouvinte recebia o erro genérico em
-vez do convite para mandar áudio, e o pedido era gravado DUAS vezes (uma como
-apenas_voz, na linha anterior, e outra como erro_tecnico, no except).
-"""
+"""Mensagens novas funcionam mesmo com o perfil antigo do cliente."""
 
 import importlib
 import sys
@@ -130,49 +116,19 @@ class _Metadados:
         self.is_confiante = True
         self.is_pedido_explicito = False
         self.genero = "Sertanejo"
-        self.is_eleitoral = False
 
 
-# --- O perfil defasado não derruba o composer ---------------------------------
-
-@pytest.mark.parametrize("situacao", ["apenas_voz", "apenas_voz_retorno"])
-def test_composer_usa_fallback_quando_slug_falta_no_perfil(
-    monkeypatch, perfil_defasado, situacao
-):
+def test_convite_usa_fallback_quando_slug_falta_no_perfil(monkeypatch, perfil_defasado):
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    composer = pipeline.composer
-
-    # _client None força o caminho canned (sem chamar LLM no teste).
-    with patch.object(composer, "_client", None):
-        msg = composer.compor(situacao, {}, "toca Evidências")
-
-    esperado = {
-        "apenas_voz": composer._FALLBACK_APENAS_VOZ,
-        "apenas_voz_retorno": composer._FALLBACK_APENAS_VOZ_RETORNO,
-    }[situacao]
-    assert msg == esperado
-    assert msg  # não é string vazia
+    assert pipeline._msg_sugestao_voz() == pipeline._MSG_SUGESTAO_VOZ_FALLBACK
 
 
-def test_composer_prefere_o_texto_do_perfil_quando_a_secao_existe(
-    monkeypatch, tmp_path
-):
-    """O fallback é rede de segurança, não o caminho normal: com a seção
-    presente, quem manda é o assistente.md (é assim que a rádio edita o tom)."""
+def test_convite_prefere_o_texto_do_perfil_quando_a_secao_existe(monkeypatch, tmp_path):
     caminho = tmp_path / "assistente.md"
-    caminho.write_text(
-        _PERFIL_DEFASADO + "\n## apenas_voz\nFala comigo no áudio!\n",
-        encoding="utf-8",
-    )
+    caminho.write_text(_PERFIL_DEFASADO + "\n## sugestao_voz\nSe quiser, manda por áudio!\n")
     monkeypatch.setenv("ASSISTANT_PROFILE_PATH", str(caminho))
-
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    composer = pipeline.composer
-    with patch.object(composer, "_client", None):
-        msg = composer.compor("apenas_voz", {}, "toca Evidências")
-
-    assert msg == "Fala comigo no áudio!"
-    assert msg != composer._FALLBACK_APENAS_VOZ
+    assert pipeline._msg_sugestao_voz() == "Se quiser, manda por áudio!"
 
 
 # --- A mensagem de falha interna também vem do perfil ------------------------
@@ -206,13 +162,10 @@ def test_msg_erro_nao_fala_de_erro_tecnico_ao_ouvinte(monkeypatch):
         assert jargao not in msg, f"'{jargao}' não deveria aparecer: {msg!r}"
 
 
-# --- Ponta a ponta: o gate de canal com perfil defasado ----------------------
-
-def test_gate_de_canal_com_perfil_defasado_convida_e_registra_uma_vez(
+def test_convite_com_perfil_defasado_mantem_sucesso_e_registra_uma_vez(
     monkeypatch, perfil_defasado
 ):
-    """O defeito original: o convite virava erro técnico e o pedido entrava
-    duas vezes no painel (apenas_voz na linha 165 + erro_tecnico no except)."""
+    """Um perfil sem sugestao_voz usa o fallback sem desfazer a entrega."""
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
     agora = datetime.now()
     historico = [
@@ -233,13 +186,11 @@ def test_gate_de_canal_com_perfil_defasado_convida_e_registra_uma_vez(
         fake_queue.enfileirar.return_value = "/fila/musica.mp3"
         resultado = pipeline.processar_pedido("5511999999999", texto="toca Evidências")
 
-    assert resultado["sucesso"] is False
-    assert resultado["aguardando_pedido"] is True
-    # O convite, não o texto de falha interna.
-    assert resultado["mensagem"] == pipeline.composer._FALLBACK_APENAS_VOZ
-    assert resultado["mensagem"] != pipeline._msg_erro()
-    # UM registro, e como apenas_voz — não um apenas_voz seguido de erro_tecnico.
+    assert resultado["sucesso"] is True
+    assert resultado["aguardando_pedido"] is False
+    assert pipeline._MSG_SUGESTAO_VOZ_FALLBACK in resultado["mensagem"]
+    assert pipeline._msg_erro() not in resultado["mensagem"]
     registrar.assert_called_once_with(
         "5511999999999", "Chitãozinho e Xororó", "Evidências",
-        sucesso=False, motivo_rejeicao="apenas_voz", genero="Sertanejo", canal="texto",
+        genero="Sertanejo", canal="texto",
     )

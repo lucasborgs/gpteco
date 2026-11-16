@@ -7,8 +7,8 @@ Suporta dois provedores de LLM (configurado via .env):
   - Groq  : gratuito, ideal para testes. Defina GROQ_API_KEY no .env.
   - OpenAI: produção. Defina OPENAI_API_KEY no .env.
 
-O provedor é selecionado automaticamente: se GROQ_API_KEY estiver presente,
-o Groq é usado. Caso contrário, cai para OpenAI.
+O provedor é selecionado automaticamente: OPENAI_API_KEY tem prioridade.
+O Groq é usado somente se não houver chave da OpenAI.
 A API do Groq é compatível com o SDK da OpenAI — nenhuma biblioteca extra necessária.
 """
 
@@ -51,11 +51,6 @@ class MetadadosMusica:
     is_saudacao: bool = False
     is_pedido_explicito: bool = False
     genero: str = ""
-    # Camada semântica do filtro eleitoral, complementar à lista fixa de
-    # core/eleitoral.py. Default False de propósito: o campo só existe no
-    # classificador a partir de 2026-10, e um perfil anterior simplesmente
-    # não o devolve — aí vale o comportamento antigo (só a lista).
-    is_eleitoral: bool = False
 
 
 def analisar(texto_transcrito: str) -> MetadadosMusica:
@@ -134,11 +129,10 @@ def analisar(texto_transcrito: str) -> MetadadosMusica:
         is_saudacao=_to_bool(dados.get("is_saudacao", False)),
         is_pedido_explicito=_to_bool(dados.get("is_pedido_explicito", False)),
         genero=str(dados.get("genero", "")).strip(),
-        is_eleitoral=_to_bool(dados.get("is_eleitoral", False)),
     )
 
     print(f"[LLM] is_pedido_musical={metadados.is_pedido_musical}")
     print(f"[LLM] Musica: '{metadados.musica}' | Artista: '{metadados.artista}'")
-    print(f"[LLM] is_flashback={metadados.is_flashback} | is_apropriado={metadados.is_apropriado} | is_confiante={metadados.is_confiante} | is_saudacao={metadados.is_saudacao} | is_pedido_explicito={metadados.is_pedido_explicito} | is_eleitoral={metadados.is_eleitoral}")
+    print(f"[LLM] is_flashback={metadados.is_flashback} | is_apropriado={metadados.is_apropriado} | is_confiante={metadados.is_confiante} | is_saudacao={metadados.is_saudacao} | is_pedido_explicito={metadados.is_pedido_explicito}")
 
     return metadados

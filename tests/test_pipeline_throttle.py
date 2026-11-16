@@ -63,7 +63,6 @@ class _Metadados:
         self.is_confiante = is_confiante
         self.is_pedido_explicito = False
         self.genero = genero
-        self.is_eleitoral = False
 
 
 def test_fila_cheia_no_download_e_recusa_amigavel(monkeypatch):
@@ -76,7 +75,7 @@ def test_fila_cheia_no_download_e_recusa_amigavel(monkeypatch):
 
     with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
+         patch.object(pipeline.canal_voz, "sugerir_voz", return_value=False), \
          patch.object(pipeline.database, "buscar_musica", return_value=None), \
          patch.object(
              pipeline.downloader, "baixar",
@@ -103,7 +102,7 @@ def test_espera_excedida_no_download_e_recusa_amigavel(monkeypatch):
 
     with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
+         patch.object(pipeline.canal_voz, "sugerir_voz", return_value=False), \
          patch.object(pipeline.database, "buscar_musica", return_value=None), \
          patch.object(
              pipeline.downloader, "baixar",
@@ -128,7 +127,7 @@ def test_mensagem_de_busca_ocupada_vem_do_perfil(monkeypatch):
 
     with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
+         patch.object(pipeline.canal_voz, "sugerir_voz", return_value=False), \
          patch.object(pipeline.database, "buscar_musica", return_value=None), \
          patch.object(
              pipeline.downloader, "baixar",
@@ -152,7 +151,7 @@ def test_notificacao_de_fila_quando_espera_estimada_alta(monkeypatch):
 
     with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
+         patch.object(pipeline.canal_voz, "sugerir_voz", return_value=False), \
          patch.object(pipeline.database, "buscar_musica", return_value=None), \
          patch.object(pipeline.downloader.yt_throttle, "espera_estimada", return_value=25.0), \
          patch.object(pipeline.downloader, "baixar", return_value="/acervo/musica.mp3"), \
@@ -175,7 +174,7 @@ def test_sem_notificacao_de_fila_quando_espera_estimada_baixa(monkeypatch):
 
     with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
+         patch.object(pipeline.canal_voz, "sugerir_voz", return_value=False), \
          patch.object(pipeline.database, "buscar_musica", return_value=None), \
          patch.object(pipeline.downloader.yt_throttle, "espera_estimada", return_value=5.0), \
          patch.object(pipeline.downloader, "baixar", return_value="/acervo/musica.mp3"), \

@@ -1,3 +1,5 @@
+"""Regressões da remoção dos bloqueios temporários do período eleitoral."""
+
 import importlib
 import sys
 import types
@@ -64,158 +66,89 @@ class _Metadados:
         self.is_eleitoral = False
 
 
-def test_audio_com_nome_de_candidato_e_bloqueado_antes_do_llm(monkeypatch, tmp_path):
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    path_ogg = tmp_path / "audio.ogg"
-    path_ogg.write_bytes(b"fake")
 
-    analisar = Mock()
+def _processar_liberado(pipeline, metadados, texto, path_ogg=None):
     registrar = Mock()
-
-    with patch.object(pipeline.stt, "transcrever", return_value="vou votar no Bolsonaro"), \
-         patch.object(pipeline.intelligence, "analisar", analisar), \
-         patch.object(pipeline.database, "registrar_pedido", registrar):
-        resultado = pipeline.processar_pedido("5511999999999", path_ogg=str(path_ogg))
-
-    assert resultado["sucesso"] is False
-    assert resultado["mensagem"] == pipeline.luzia.MSG_ELEITORAL
-    analisar.assert_not_called()
+    with patch.object(pipeline.stt, "transcrever", return_value=texto), \
+         patch.object(pipeline.intelligence, "analisar", return_value=metadados) as analisar, \
+         patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
+         patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
+         patch.object(pipeline.database, "registrar_pedido", registrar), \
+         patch.object(pipeline.canal_voz, "sugerir_voz", return_value=False), \
+         patch.object(pipeline.audio_mixer, "mixar", return_value="/tmp/mixado.mp3"), \
+         patch.object(pipeline, "queue_watcher") as fila, \
+         patch.object(pipeline, "shutil"):
+        fila.enfileirar.return_value = "/fila/musica.mp3"
+        resultado = pipeline.processar_pedido(
+            "5511999999999", path_ogg=path_ogg,
+            texto=None if path_ogg else texto,
+        )
+    assert resultado["sucesso"] is True
+    assert resultado["path_audio"] == "/fila/musica.mp3"
+    assert resultado["aguardando_pedido"] is False
+    analisar.assert_called_once_with(texto)
     registrar.assert_called_once_with(
-        "5511999999999", "", "", sucesso=False, motivo_rejeicao="eleitoral", canal="voz"
+        "5511999999999", metadados.artista, metadados.musica,
+        genero=metadados.genero, canal="voz" if path_ogg else "texto",
     )
 
 
-def test_texto_digitado_com_nome_de_candidato_nao_e_bloqueado(monkeypatch):
-    """O gate de candidatos só vale para áudio (é a voz do ouvinte que iria
-    ao ar na mixagem) — pedido digitado não passa por essa checagem."""
+@pytest.mark.parametrize("canal", ["texto", "voz"])
+@pytest.mark.parametrize("musica,artista,genero", [
+    ("Vai dar PT", "Léo Santana", "axé"),
+    ("Lula Lá", "Artista Qualquer", "mpb"),
+    ("Capitão do Povo", "Mateus & Cristiano", "sertanejo"),
+    ("Negro Drama", "Racionais MC's", "rap nacional"),
+    ("Messias", "Dead Fish", "rock"),
+    ("Brasil", "Cazuza", "rock"),
+])
+def test_faixas_e_artistas_antes_vetados_sao_atendidos(
+    monkeypatch, tmp_path, canal, musica, artista, genero,
+):
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    metadados = _Metadados(musica="Evidências", artista="Chitãozinho e Xororó")
-
-    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
-         patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
-         patch.object(pipeline.database, "registrar_pedido"), \
-         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
-         patch.object(pipeline, "queue_watcher") as fake_queue, \
-         patch.object(pipeline, "shutil") as fake_shutil:
-        fake_queue.enfileirar.return_value = "/fila/musica.mp3"
-        resultado = pipeline.processar_pedido("5511999999999", texto="vou votar no Bolsonaro, toca Evidências")
-
-    assert resultado["sucesso"] is True
-    assert resultado["mensagem"] != pipeline.luzia.MSG_ELEITORAL
-
-
-def test_musica_da_lista_proibida_e_bloqueada_em_pedido_por_texto(monkeypatch):
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    metadados = _Metadados(musica="Vai dar PT", artista="Léo Santana")
-    registrar = Mock()
-
-    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
-         patch.object(pipeline.database, "registrar_pedido", registrar):
-        resultado = pipeline.processar_pedido("5511999999999", texto="toca vai dar pt")
-
-    assert resultado["sucesso"] is False
-    assert resultado["mensagem"] == pipeline.luzia.MSG_ELEITORAL
-    registrar.assert_called_once_with(
-        "5511999999999", "Léo Santana", "Vai dar PT",
-        sucesso=False, motivo_rejeicao="eleitoral", genero="Sertanejo", canal="texto",
+    audio = tmp_path / "pedido.ogg"
+    audio.write_bytes(b"audio")
+    metadados = _Metadados(musica=musica, artista=artista, genero=genero)
+    _processar_liberado(
+        pipeline, metadados, f"toca {musica} de {artista}",
+        str(audio) if canal == "voz" else None,
     )
 
 
-def test_musica_da_lista_proibida_bloqueia_independente_do_artista(monkeypatch, tmp_path):
-    """Confirmado com o usuário: bloqueio é pelo título sozinho, mesmo que o
-    LLM identifique um artista diferente do da lista de referência."""
+@pytest.mark.parametrize("nome", ["Lula", "Bolsonaro", "Pablo Marçal"])
+def test_nome_de_candidato_em_audio_nao_interrompe_o_pedido(monkeypatch, tmp_path, nome):
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    path_ogg = tmp_path / "audio.ogg"
-    path_ogg.write_bytes(b"fake")
-    metadados = _Metadados(musica="Lula Lá", artista="Artista Qualquer")
-    registrar = Mock()
-
-    with patch.object(pipeline.stt, "transcrever", return_value="toca lula la pra mim"), \
-         patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
-         patch.object(pipeline.database, "registrar_pedido", registrar):
-        resultado = pipeline.processar_pedido("5511999999999", path_ogg=str(path_ogg))
-
-    assert resultado["sucesso"] is False
-    assert resultado["mensagem"] == pipeline.luzia.MSG_ELEITORAL
+    audio = tmp_path / "pedido.ogg"
+    audio.write_bytes(b"audio")
+    _processar_liberado(
+        pipeline, _Metadados(), f"gosto do {nome}, toca Evidências",
+        path_ogg=str(audio),
+    )
 
 
-def test_pedido_normal_sem_conteudo_eleitoral_nao_e_afetado(monkeypatch):
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    metadados = _Metadados(musica="Evidências", artista="Chitãozinho e Xororó")
-
-    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
-         patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
-         patch.object(pipeline.database, "registrar_pedido"), \
-         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
-         patch.object(pipeline, "queue_watcher") as fake_queue, \
-         patch.object(pipeline, "shutil") as fake_shutil:
-        fake_queue.enfileirar.return_value = "/fila/musica.mp3"
-        resultado = pipeline.processar_pedido("5511999999999", texto="toca Evidências")
-
-    assert resultado["sucesso"] is True
-    assert resultado["mensagem"] != pipeline.luzia.MSG_ELEITORAL
-
-
-# --- Camada do classificador (is_eleitoral), complementar à lista fixa ---
-
-def test_classificador_bloqueia_musica_fora_da_lista(monkeypatch):
-    """O furo que motivou a camada: título que a lista não prevê (variante de
-    grafia, apelido, faixa não catalogada) passava direto, mesmo com o LLM
-    tendo reconhecido o teor — ver o caso do Dead Fish em 2026-10-09."""
+def test_lista_legada_e_flag_do_classificador_nao_reativam_bloqueio(monkeypatch, tmp_path):
+    lista = tmp_path / "eleitoral.json"
+    lista.write_text('{"candidatos": ["Lula"], "musicas_proibidas": []}')
+    monkeypatch.setenv("ELEITORAL_LISTA_PATH", str(lista))
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
     metadados = _Metadados(musica="Jingle Qualquer", artista="Banda Qualquer")
-    metadados.is_eleitoral = True
-    registrar = Mock()
-
-    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
-         patch.object(pipeline.database, "registrar_pedido", registrar):
-        resultado = pipeline.processar_pedido("5511999999999", texto="toca o jingle qualquer")
-
-    assert resultado["sucesso"] is False
-    assert resultado["mensagem"] == pipeline.luzia.MSG_ELEITORAL
-    registrar.assert_called_once_with(
-        "5511999999999", "Banda Qualquer", "Jingle Qualquer",
-        sucesso=False, motivo_rejeicao="eleitoral", genero="Sertanejo", canal="texto",
-    )
+    metadados.is_eleitoral = True  # objeto de um classificador anterior
+    _processar_liberado(pipeline, metadados, "toca o Jingle Qualquer")
 
 
-def test_lista_bloqueia_mesmo_com_classificador_dizendo_que_nao(monkeypatch):
-    """A lista é o piso auditável aprovado pela emissora: o julgamento do
-    modelo não pode liberar um título que a rádio decidiu barrar."""
+def test_resposta_de_perfil_legado_com_campo_extra_continua_compativel(monkeypatch):
+    import json
+
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    metadados = _Metadados(musica="Lula Lá", artista="Artista Qualquer")
-    metadados.is_eleitoral = False
-
-    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
-         patch.object(pipeline.database, "registrar_pedido"):
-        resultado = pipeline.processar_pedido("5511999999999", texto="toca lula la")
-
-    assert resultado["sucesso"] is False
-    assert resultado["mensagem"] == pipeline.luzia.MSG_ELEITORAL
-
-
-def test_perfil_antigo_sem_o_campo_nao_quebra_nem_bloqueia(monkeypatch):
-    """O campo só existe no classificador a partir de 2026-10. Resposta sem
-    ele cai no default False — volta ao comportamento antigo (só a lista),
-    em vez de levantar ou barrar pedido legítimo."""
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    metadados = pipeline.intelligence.MetadadosMusica(
-        is_pedido_musical=True, musica="Evidências",
-        artista="Chitãozinho e Xororó", is_flashback=True, is_apropriado=True,
+    dados = dict(
+        is_pedido_musical=True, musica="Messias", artista="Dead Fish",
+        is_flashback=True, is_apropriado=True, is_confiante=True,
+        is_eleitoral=True, genero="rock",
     )
-
-    assert metadados.is_eleitoral is False
-
-    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
-         patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
-         patch.object(pipeline.database, "registrar_pedido"), \
-         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
-         patch.object(pipeline, "queue_watcher") as fake_queue, \
-         patch.object(pipeline, "shutil"):
-        fake_queue.enfileirar.return_value = "/fila/musica.mp3"
-        resultado = pipeline.processar_pedido("5511999999999", texto="toca Evidências")
-
-    assert resultado["sucesso"] is True
+    resposta = types.SimpleNamespace(choices=[types.SimpleNamespace(
+        message=types.SimpleNamespace(content=json.dumps(dados)),
+    )])
+    with patch.object(pipeline.intelligence.llm_compat, "completar", return_value=resposta):
+        metadados = pipeline.intelligence.analisar("toca Messias Dead Fish")
+    assert not hasattr(metadados, "is_eleitoral")
+    _processar_liberado(pipeline, metadados, "toca Messias Dead Fish")

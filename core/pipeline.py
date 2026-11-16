@@ -33,7 +33,7 @@ import shutil
 import time
 from pathlib import Path
 
-from core import audio_mixer, canal_voz, composer, config_radio, database, downloader, eleitoral, intelligence, luzia, queue_watcher, repertorio, stt
+from core import audio_mixer, canal_voz, composer, config_radio, database, downloader, intelligence, luzia, queue_watcher, repertorio, stt
 
 # Diretórios (configuráveis via .env)
 TEMP_DIR: str = os.getenv(
@@ -56,6 +56,11 @@ _MSG_ERRO_FALLBACK = (
 _MSG_BUSCA_OCUPADA_FALLBACK = (
     "Tá com muita gente buscando música aqui agora! Tenta de novo daqui a "
     "uns minutinhos, por favor. 🎵"
+)
+
+_MSG_SUGESTAO_VOZ_FALLBACK = (
+    "Que tal mandar os próximos pedidos por áudio, com o nome da música e do "
+    "artista? Sua voz pode aparecer na programação! 🎙️"
 )
 
 
@@ -89,7 +94,7 @@ def processar_pedido(
     # O texto é a confirmação digitada pelo ouvinte; o áudio é usado só para a mixagem.
     _is_retry = bool(path_ogg and texto)
 
-    # Canal do pedido (item C, seção 8.1) — mesmo critério do filtro eleitoral:
+    # Canal do pedido:
     # há voz do ouvinte quando existe path_ogg (vai à mixagem e ao ar), inclusive
     # no modo retry. A pendência "__texto__" chega sem path_ogg e é "texto".
     # Calculado antes do try/except: é a única variável do bloco de erro que
@@ -109,13 +114,6 @@ def processar_pedido(
             texto = stt.transcrever(path_ogg)
             if not texto.strip():
                 return _resultado(False, None, "Não consegui entender o áudio. Pode reenviar ou mandar um texto com o nome da música?")
-
-            # Gate eleitoral — só se aplica a áudio: é a voz do ouvinte que
-            # seria sobreposta à música na Etapa 5 e iria ao ar. Roda antes do
-            # LLM e de qualquer outra etapa. Ver core/eleitoral.py.
-            if eleitoral.contem_candidato(texto):
-                database.registrar_pedido(numero, "", "", sucesso=False, motivo_rejeicao="eleitoral", canal=canal)
-                return _resultado(False, None, luzia.MSG_ELEITORAL)
 
             if notificar:
                 notificar(f"Entendi: \"{texto}\"\n\nBuscando a música...")
@@ -137,16 +135,6 @@ def processar_pedido(
             print("[PIPELINE] Mensagem fora de escopo — enviando menu.")
             return _resultado(False, None, config_radio.MSG_SAUDACAO, mostrar_menu=True)
 
-        # Música de conteúdo político vetada — vale para qualquer canal (áudio
-        # ou texto). Duas camadas: a lista fixa de core/eleitoral.py, que é o
-        # piso auditável aprovado pela emissora, e o julgamento do classificador
-        # (is_eleitoral), que pega o que a lista não previu — variante de
-        # grafia, apelido, título fora da lista. Nenhuma das duas sozinha
-        # resolve: a lista não escala, e o LLM não dá garantia por título.
-        if eleitoral.eh_musica_proibida(metadados.musica, metadados.artista) or metadados.is_eleitoral:
-            database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="eleitoral", genero=metadados.genero, canal=canal)
-            return _resultado(False, None, luzia.MSG_ELEITORAL)
-
         if not metadados.is_apropriado:
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="inapropriado", genero=metadados.genero, canal=canal)
             msg = composer.compor("inapropriado", {"artista": metadados.artista, "musica": metadados.musica}, texto)
@@ -158,22 +146,6 @@ def processar_pedido(
             database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="cooldown", genero=metadados.genero, canal=canal)
             msg = composer.compor("cooldown", {"artista": metadados.artista, "musica": metadados.musica}, texto)
             return _resultado(False, None, msg)
-
-        # --- Gate de canal (item C, seção 8.1) ---
-        # Depois do cooldown (ninguém recebe convite para falar no ar quando a
-        # voz também seria recusada) e antes de is_confiante (não abre pendência
-        # de confirmação que seria recusada em seguida). Só vale para quem está
-        # chegando por texto — path_ogg (voz) nunca é bloqueado aqui.
-        # avaliar() faz UMA consulta ao banco para as duas respostas (bloqueado
-        # e tem_historico_de_voz), em vez de bloqueado()+tem_historico_de_voz()
-        # em separado, que gastaria duas consultas pelo mesmo pedido.
-        if canal == "texto":
-            canal_bloqueado, teve_voz = canal_voz.avaliar(numero)
-            if canal_bloqueado:
-                database.registrar_pedido(numero, metadados.artista, metadados.musica, sucesso=False, motivo_rejeicao="apenas_voz", genero=metadados.genero, canal=canal)
-                situacao = "apenas_voz_retorno" if teve_voz else "apenas_voz"
-                msg = composer.compor(situacao, {"artista": metadados.artista, "musica": metadados.musica}, texto)
-                return _resultado(False, None, msg, aguardando_pedido=True)
 
         # Baixa confiança na identificação (transcrição possivelmente corrompida).
         # No modo retry o ouvinte já digitou — não abre nova pendência.
@@ -271,6 +243,15 @@ def processar_pedido(
             print(f"[PIPELINE] Pedido entregue à fila, mas registro no banco falhou: {e}")
             codigo = "registro_pendente"
 
+        # O convite só acompanha pedidos já atendidos. É opcional e nunca
+        # recusa texto nem transforma uma entrega bem-sucedida em falha.
+        if canal == "texto" and codigo is None:
+            try:
+                if canal_voz.sugerir_voz(numero):
+                    msg += "\n\n" + _msg_sugestao_voz()
+            except Exception as e:
+                print(f"[PIPELINE] Pedido entregue; não foi possível acrescentar o convite de voz: {e}")
+
         _log_separador(f"Concluído: {nome_saida}")
         return _resultado(
             True,
@@ -310,6 +291,10 @@ def processar_pedido(
 
 
 # --- Helpers internos ---
+
+def _msg_sugestao_voz() -> str:
+    return luzia.mensagem("sugestao_voz", _MSG_SUGESTAO_VOZ_FALLBACK)
+
 
 def _msg_erro() -> str:
     """Texto de falha interna, lido do perfil a CADA chamada.

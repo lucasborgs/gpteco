@@ -67,7 +67,8 @@ def _cliente_familia_gpt6(resposta):
     return cliente
 
 
-def test_gerar_pilula_funciona_em_modelo_que_recusa_temperature():
+@pytest.mark.parametrize("modelo", ["gpt-6-sol", "gpt-5.6", "gpt-5.6-sol"])
+def test_gerar_pilula_funciona_em_modelo_que_recusa_temperature(modelo):
     """Ponta a ponta do defeito: antes, isto devolvia None."""
     resposta = Mock()
     resposta.choices = [
@@ -76,11 +77,13 @@ def test_gerar_pilula_funciona_em_modelo_que_recusa_temperature():
     cliente = _cliente_familia_gpt6(resposta)
 
     with patch.object(curador, "_client", cliente), \
-         patch.object(curador, "PILULAS_MODELO", "gpt-6-sol"):
+         patch.object(curador, "PILULAS_MODELO", modelo):
         assert curador.gerar_pilula("Dead Fish", "Messias") == "Fato curioso."
+    assert cliente.chat.completions.create.call_args.kwargs["model"] == modelo
 
 
-def test_personalizar_pilula_funciona_em_modelo_que_recusa_max_tokens():
+@pytest.mark.parametrize("modelo", ["gpt-6-sol", "gpt-5.6", "gpt-5.6-sol"])
+def test_personalizar_pilula_funciona_em_modelo_que_recusa_max_tokens(modelo):
     """A personalização manda max_tokens=220. Sem o tratamento, o 400 caía no
     `except` e o ouvinte recebia sempre a pílula base — sem erro visível."""
     base = "Gravada em 1973, a faixa é de Edson Trindade."
@@ -91,10 +94,12 @@ def test_personalizar_pilula_funciona_em_modelo_que_recusa_max_tokens():
     cliente = _cliente_familia_gpt6(resposta)
 
     with patch.object(curador, "_client", cliente), \
-         patch.object(curador, "PILULAS_CONTEXTO_MODELO", "gpt-6-sol"):
+         patch.object(curador, "PILULAS_CONTEXTO_MODELO", modelo):
         texto = curador.personalizar_pilula(base, "vou ouvir no carro com a família")
 
     assert texto != base
     assert "família" in texto
     # O nome novo do parâmetro chegou na chamada que funcionou.
     assert cliente.chat.completions.create.call_args.kwargs["max_completion_tokens"] == 220
+    if modelo.startswith("gpt-5.6"):
+        assert cliente.chat.completions.create.call_args.kwargs["reasoning_effort"] == "none"

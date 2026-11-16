@@ -12,7 +12,7 @@ texto fixo (canned) de luzia.md — ou seja, o pior caso é a experiência de ho
 
 Configuração (.env):
   COMPOSER_ENABLED : "true"/"false" (padrão true). Se false, sempre usa canned.
-  COMPOSER_MODELO  : modelo a usar (padrão: gpt-4o, ou llama no Groq).
+  COMPOSER_MODELO  : modelo a usar (padrão: gpt-5.6, ou llama no Groq).
   OPENAI_API_KEY / GROQ_API_KEY : seleção de provedor (OpenAI tem prioridade).
 """
 
@@ -35,7 +35,7 @@ _GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 _OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 _USAR_GROQ: bool = bool(_GROQ_API_KEY) and not bool(_OPENAI_API_KEY)
 
-_MODELO_PADRAO = "llama-3.3-70b-versatile" if _USAR_GROQ else "gpt-4o"
+_MODELO_PADRAO = "llama-3.3-70b-versatile" if _USAR_GROQ else "gpt-5.6"
 MODELO: str = os.getenv("COMPOSER_MODELO", _MODELO_PADRAO)
 
 if not _ENABLED:
@@ -60,17 +60,6 @@ _BLOCKLIST = re.compile(
     re.IGNORECASE,
 )
 
-# Fallbacks dos slugs que não estão em luzia._MSG_SLUG. Só entram em uso se o
-# perfil ativo não tiver a seção — o texto normal vem sempre do assistente.md.
-_FALLBACK_APENAS_VOZ = (
-    "Você ainda não fez nenhum pedido por voz! Que tal falar direto no ar? "
-    "Manda um áudio com o nome da música e do artista 🎙️"
-)
-_FALLBACK_APENAS_VOZ_RETORNO = (
-    "Faz tempo que a gente não ouve sua voz no ar! Manda um áudio com o "
-    "pedido que eu coloco você na programação 🎙️"
-)
-
 # Mapeia situação → função que produz o texto canônico (rede de segurança).
 _CANNED = {
     "nao_repertorio": lambda c: luzia.MSG_NAO_REPERTORIO.format_map(_Safe(c)),
@@ -78,10 +67,6 @@ _CANNED = {
     "inapropriado":   lambda c: luzia.MSG_INAPROPRIADO,
     "nao_id":         lambda c: luzia.MSG_NAO_ID,
     "confirmacao":    lambda c: luzia.MSG_CONFIRMACAO.format_map(_Safe(c)),
-    # Slugs criados depois da primeira entrega ao cliente: acesso TOLERANTE,
-    # porque o assistente.md dele pode não ter a seção (ver luzia._MSG_SLUG).
-    "apenas_voz":          lambda c: luzia.mensagem("apenas_voz", _FALLBACK_APENAS_VOZ),
-    "apenas_voz_retorno":  lambda c: luzia.mensagem("apenas_voz_retorno", _FALLBACK_APENAS_VOZ_RETORNO),
 }
 
 
@@ -154,7 +139,10 @@ def compor(situacao: str, contexto: dict | None = None, texto_ouvinte: str = "")
                 {"role": "user", "content": user},
             ],
             temperature=0.5,
-            max_tokens=160,
+            # Respostas curtas não devem gastar o limite em raciocínio.
+            **({"max_completion_tokens": 160, "reasoning_effort": "none"}
+               if MODELO in ("gpt-5.6", "gpt-5.6-sol")
+               else {"max_tokens": 160}),
         )
         texto = _normalizar(resp.choices[0].message.content or "")
         motivo = _valido(texto)

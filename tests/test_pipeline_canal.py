@@ -1,14 +1,4 @@
-"""
-tests/test_pipeline_canal.py
-
-Cobertura da C5: o gate de canal (item C, seção 8.1) dentro de
-core/pipeline.py. Segue o padrão de tests/test_pipeline_eleitoral.py — helper
-de import com fakes em sys.modules, _Metadados, database mockado. O ponto de
-controle é database.pedidos_atendidos_por_canal, mockado com listas de
-(datetime, canal); o fold em si (core/canal_voz.py) já tem cobertura própria
-em tests/test_canal_voz.py — aqui o foco é a fiação do gate dentro do
-pipeline (posição, canal= nos registros, mensagens, aguardando_pedido).
-"""
+"""Convite opcional para voz e regressões do resultado da entrega."""
 
 import importlib
 import sys
@@ -76,258 +66,95 @@ class _Metadados:
         self.is_confiante = is_confiante
         self.is_pedido_explicito = False
         self.genero = genero
-        self.is_eleitoral = False
 
 
-def _rodar_texto(pipeline, historico, registrar=None, notificar=None):
-    """Executa um pedido por texto com `historico` mockado em
-    pedidos_atendidos_por_canal e o resto do pipeline liberado (cooldown ok,
-    música já no acervo) — isola o efeito do gate de canal."""
-    metadados = _Metadados()
+
+def _rodar_texto(pipeline, historico, registrar=None):
+    historico = list(historico)
     registrar = registrar if registrar is not None else Mock()
-    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
+
+    def salvar(*args, **kwargs):
+        registrar(*args, **kwargs)
+        if kwargs.get("sucesso", True):
+            historico.append((datetime.now(), kwargs["canal"]))
+
+    with patch.object(pipeline.intelligence, "analisar", return_value=_Metadados()), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
          patch.object(pipeline.database, "pedidos_atendidos_por_canal", return_value=historico), \
          patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
-         patch.object(pipeline.database, "registrar_pedido", registrar), \
-         patch.object(pipeline, "queue_watcher") as fake_queue, \
+         patch.object(pipeline.database, "registrar_pedido", side_effect=salvar), \
+         patch.object(pipeline, "queue_watcher") as fila, \
          patch.object(pipeline, "shutil"):
-        fake_queue.enfileirar.return_value = "/fila/musica.mp3"
-        resultado = pipeline.processar_pedido(
-            "5511999999999", texto="toca Evidências", notificar=notificar
-        )
+        fila.enfileirar.return_value = "/fila/musica.mp3"
+        resultado = pipeline.processar_pedido("5511999999999", texto="toca Evidências")
     return resultado, registrar
 
 
-def test_dois_atendidos_por_texto_terceiro_por_texto_e_processado(monkeypatch):
-    """2 pedidos de texto atendidos no histórico + este (3º, ainda não
-    registrado) não bloqueia — o fold só bloqueia quando o histórico JÁ
-    contém 3 atendidos por texto."""
+@pytest.mark.parametrize("textos_anteriores", [0, 1, 2, 3, 10])
+def test_convite_a_partir_do_segundo_pedido_sem_bloquear_os_proximos(monkeypatch, textos_anteriores):
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    agora = datetime.now()
-    historico = [
-        (agora - timedelta(hours=2), "texto"),
-        (agora - timedelta(hours=1), "texto"),
-    ]
+    historico = [(datetime.now() - timedelta(hours=i + 1), "texto") for i in reversed(range(textos_anteriores))]
     resultado, registrar = _rodar_texto(pipeline, historico)
 
     assert resultado["sucesso"] is True
-    # Fecha o ciclo: o próprio registro de sucesso deste pedido entra com canal="texto".
+    assert resultado["aguardando_pedido"] is False
+    assert resultado["pendente"] is False
+    assert (pipeline._msg_sugestao_voz() in resultado["mensagem"]) == (textos_anteriores >= 1)
+    assert resultado["mensagem"].startswith(pipeline.config_radio.MSG_SUCESSO.format(
+        artista="Chitãozinho e Xororó", musica="Evidências",
+    ))
     registrar.assert_called_once_with(
         "5511999999999", "Chitãozinho e Xororó", "Evidências",
         genero="Sertanejo", canal="texto",
     )
 
 
-def test_tres_atendidos_por_texto_terceiro_ha_dez_minutos_recusa_apenas_voz(monkeypatch):
-    """3 atendidos por texto, o 3º há 10 min → dentro do bloqueio de 60 min:
-    recusa apenas_voz (sem histórico de voz), aguardando_pedido=True."""
+def test_pedido_por_voz_reinicia_o_convite(monkeypatch):
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    agora = datetime.now()
-    historico = [
-        (agora - timedelta(minutes=50), "texto"),
-        (agora - timedelta(minutes=30), "texto"),
-        (agora - timedelta(minutes=10), "texto"),
-    ]
-    registrar = Mock()
-    resultado, registrar = _rodar_texto(pipeline, historico, registrar=registrar)
-
-    assert resultado["sucesso"] is False
-    assert resultado["aguardando_pedido"] is True
-    assert resultado["mensagem"] == pipeline.luzia.mensagem(
-        "apenas_voz", pipeline.composer._FALLBACK_APENAS_VOZ
-    )
-    registrar.assert_called_once_with(
-        "5511999999999", "Chitãozinho e Xororó", "Evidências",
-        sucesso=False, motivo_rejeicao="apenas_voz", genero="Sertanejo", canal="texto",
-    )
+    canais = ["texto", "texto", "voz"]
+    historico = [(datetime.now() - timedelta(hours=4 - i), canal) for i, canal in enumerate(canais)]
+    resultado, _ = _rodar_texto(pipeline, historico)
+    assert resultado["sucesso"] is True
+    assert pipeline._msg_sugestao_voz() not in resultado["mensagem"]
 
 
-def test_mesmo_cenario_de_bloqueio_mas_com_path_ogg_e_processado(monkeypatch, tmp_path):
-    """O mesmo histórico de bloqueio não afeta quem está mandando voz — o
-    gate só vale para canal == "texto"; path_ogg (voz) nunca é bloqueado."""
+def test_pedido_por_audio_nao_recebe_convite_para_audio(monkeypatch, tmp_path):
     pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    path_ogg = tmp_path / "audio.ogg"
-    path_ogg.write_bytes(b"fake")
-    agora = datetime.now()
-    historico = [
-        (agora - timedelta(minutes=50), "texto"),
-        (agora - timedelta(minutes=30), "texto"),
-        (agora - timedelta(minutes=10), "texto"),
-    ]
-    metadados = _Metadados()
-    registrar = Mock()
-
+    audio = tmp_path / "ouvinte.ogg"
+    audio.write_bytes(b"voz")
     with patch.object(pipeline.stt, "transcrever", return_value="toca Evidências"), \
-         patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
+         patch.object(pipeline.intelligence, "analisar", return_value=_Metadados()), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.database, "pedidos_atendidos_por_canal", return_value=historico), \
-         patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
-         patch.object(pipeline.database, "registrar_pedido", registrar), \
-         patch.object(pipeline, "audio_mixer") as fake_mixer, \
-         patch.object(pipeline, "queue_watcher") as fake_queue, \
-         patch.object(pipeline, "shutil"):
-        fake_mixer.mixar.return_value = "/tmp/mixado.mp3"
-        fake_queue.enfileirar.return_value = "/fila/musica.mp3"
-        resultado = pipeline.processar_pedido("5511999999999", path_ogg=str(path_ogg))
-
-    assert resultado["sucesso"] is True
-    registrar.assert_called_once_with(
-        "5511999999999", "Chitãozinho e Xororó", "Evidências",
-        genero="Sertanejo", canal="voz",
-    )
-
-
-def test_terceiro_pedido_ha_sessenta_e_um_minutos_e_liberado(monkeypatch):
-    """Bloqueio de 60 min já expirado (fechou há 61 min) → liberado."""
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    agora = datetime.now()
-    historico = [
-        (agora - timedelta(hours=3), "texto"),
-        (agora - timedelta(hours=2), "texto"),
-        (agora - timedelta(minutes=61), "texto"),
-    ]
-    resultado, _ = _rodar_texto(pipeline, historico)
-
-    assert resultado["sucesso"] is True
-
-
-def test_texto_texto_voz_texto_texto_nao_bloqueia(monkeypatch):
-    """Um atendido por voz no meio zera o contador — os dois textos
-    seguintes não chegam a 3."""
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    agora = datetime.now()
-    historico = [
-        (agora - timedelta(hours=5), "texto"),
-        (agora - timedelta(hours=4), "texto"),
-        (agora - timedelta(hours=3), "voz"),
-        (agora - timedelta(hours=2), "texto"),
-        (agora - timedelta(hours=1), "texto"),
-    ]
-    resultado, _ = _rodar_texto(pipeline, historico)
-
-    assert resultado["sucesso"] is True
-
-
-def test_tres_atendidos_por_voz_libera_texto(monkeypatch):
-    """3 atendidos por voz não incrementam o contador de texto — liberado."""
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    agora = datetime.now()
-    historico = [
-        (agora - timedelta(hours=3), "voz"),
-        (agora - timedelta(hours=2), "voz"),
-        (agora - timedelta(hours=1), "voz"),
-    ]
-    resultado, _ = _rodar_texto(pipeline, historico)
-
-    assert resultado["sucesso"] is True
-
-
-def test_linhas_com_canal_nulo_sao_ignoradas_pelo_fold(monkeypatch):
-    """canal IS NULL (ou "") no meio do histórico não conta como texto nem
-    como voz — só os 3 "texto" reais fecham o ciclo."""
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    agora = datetime.now()
-    historico = [
-        (agora - timedelta(hours=5), None),
-        (agora - timedelta(minutes=50), "texto"),
-        (agora - timedelta(hours=3), ""),
-        (agora - timedelta(minutes=30), "texto"),
-        (agora - timedelta(minutes=10), "texto"),
-    ]
-    resultado, registrar = _rodar_texto(pipeline, historico)
-
-    assert resultado["sucesso"] is False
-    assert resultado["aguardando_pedido"] is True
-    registrar.assert_called_once_with(
-        "5511999999999", "Chitãozinho e Xororó", "Evidências",
-        sucesso=False, motivo_rejeicao="apenas_voz", genero="Sertanejo", canal="texto",
-    )
-
-
-def test_sem_historico_de_voz_usa_mensagem_apenas_voz(monkeypatch):
-    """Bloqueado e nunca mandou voz → situação apenas_voz (sem "retorno")."""
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    agora = datetime.now()
-    historico = [
-        (agora - timedelta(minutes=50), "texto"),
-        (agora - timedelta(minutes=30), "texto"),
-        (agora - timedelta(minutes=10), "texto"),
-    ]
-    resultado, _ = _rodar_texto(pipeline, historico)
-
-    assert resultado["mensagem"] == pipeline.luzia.mensagem(
-        "apenas_voz", pipeline.composer._FALLBACK_APENAS_VOZ
-    )
-
-
-def test_com_historico_de_voz_usa_mensagem_apenas_voz_retorno(monkeypatch):
-    """Bloqueado, mas já mandou voz alguma vez no histórico (antes do ciclo
-    de bloqueio atual) → situação apenas_voz_retorno."""
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    agora = datetime.now()
-    historico = [
-        (agora - timedelta(days=5), "voz"),
-        (agora - timedelta(minutes=50), "texto"),
-        (agora - timedelta(minutes=30), "texto"),
-        (agora - timedelta(minutes=10), "texto"),
-    ]
-    resultado, registrar = _rodar_texto(pipeline, historico)
-
-    assert resultado["sucesso"] is False
-    assert resultado["mensagem"] == pipeline.luzia.mensagem(
-        "apenas_voz_retorno", pipeline.composer._FALLBACK_APENAS_VOZ_RETORNO
-    )
-    registrar.assert_called_once_with(
-        "5511999999999", "Chitãozinho e Xororó", "Evidências",
-        sucesso=False, motivo_rejeicao="apenas_voz", genero="Sertanejo", canal="texto",
-    )
-
-
-def test_canal_voz_ativado_false_deixa_gate_inerte(monkeypatch):
-    """CANAL_VOZ_ATIVADO=false desliga o gate inteiro: mesmo com histórico de
-    bloqueio, o pedido é processado normalmente (seção 10 da spec).
-
-    O pacote `core` guarda `canal_voz` como atributo desde a primeira vez que
-    algum teste o importou nesta sessão (mecanismo padrão de `from X import Y`
-    do Python); popular `sys.modules["core.canal_voz"]` antes do próximo
-    import não força reexecução do módulo, então uma env var lida só no
-    import (`CANAL_VOZ_ATIVADO`) não teria efeito aqui. Por isso o teste
-    desativa a flag diretamente no objeto já carregado — o mesmo efeito que
-    `CANAL_VOZ_ATIVADO=false` produziria num processo novo — e confirma que o
-    gate do pipeline respeita o que `canal_voz.avaliar` disser."""
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    monkeypatch.setattr(pipeline.canal_voz, "CANAL_VOZ_ATIVADO", False)
-    agora = datetime.now()
-    historico = [
-        (agora - timedelta(minutes=50), "texto"),
-        (agora - timedelta(minutes=30), "texto"),
-        (agora - timedelta(minutes=10), "texto"),
-    ]
-    resultado, _ = _rodar_texto(pipeline, historico)
-
-    assert resultado["sucesso"] is True
-
-
-def test_gate_consulta_pedidos_atendidos_por_canal_com_numero_e_janela(monkeypatch):
-    """Confirma a fiação: o gate chama database.pedidos_atendidos_por_canal
-    com o número do ouvinte e a janela configurada em canal_voz
-    (CANAL_HISTORICO_DIAS) — não reimplementa o fold, delega para canal_voz."""
-    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
-    consulta = Mock(return_value=[])
-    metadados = _Metadados()
-
-    with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
-         patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.database, "pedidos_atendidos_por_canal", consulta), \
          patch.object(pipeline.database, "buscar_musica", return_value="/acervo/musica.mp3"), \
          patch.object(pipeline.database, "registrar_pedido"), \
-         patch.object(pipeline, "queue_watcher") as fake_queue, \
-         patch.object(pipeline, "shutil"):
-        fake_queue.enfileirar.return_value = "/fila/musica.mp3"
-        pipeline.processar_pedido("5511999999999", texto="toca Evidências")
+         patch.object(pipeline.canal_voz, "sugerir_voz") as sugestao, \
+         patch.object(pipeline.audio_mixer, "mixar", return_value="/tmp/mix.mp3"), \
+         patch.object(pipeline.queue_watcher, "enfileirar", return_value="/fila/musica.mp3"):
+        resultado = pipeline.processar_pedido("5511999999999", path_ogg=str(audio))
+    assert resultado["sucesso"] is True
+    sugestao.assert_not_called()
+    assert pipeline._msg_sugestao_voz() not in resultado["mensagem"]
 
-    consulta.assert_called_once_with("5511999999999", pipeline.canal_voz.CANAL_HISTORICO_DIAS)
+
+def test_falha_no_convite_nao_desfaz_entrega(monkeypatch):
+    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
+    with patch.object(pipeline.canal_voz, "sugerir_voz", side_effect=RuntimeError("banco indisponivel")):
+        resultado, registrar = _rodar_texto(pipeline, [])
+    assert resultado["sucesso"] is True
+    assert resultado["path_audio"] == "/fila/musica.mp3"
+    registrar.assert_called_once()
+
+
+def test_pedido_recusado_por_cooldown_nao_recebe_convite(monkeypatch):
+    pipeline = _import_pipeline_with_fake_dependencies(monkeypatch)
+    with patch.object(pipeline.intelligence, "analisar", return_value=_Metadados()), \
+         patch.object(pipeline.database, "verificar_cooldown", return_value=False), \
+         patch.object(pipeline.database, "registrar_pedido"), \
+         patch.object(pipeline.composer, "compor", return_value="Aguarde um pouco."), \
+         patch.object(pipeline.canal_voz, "sugerir_voz") as sugestao:
+        resultado = pipeline.processar_pedido("5511999999999", texto="toca Evidências")
+    assert resultado["sucesso"] is False
+    sugestao.assert_not_called()
 
 
 @pytest.mark.parametrize("canal", ["texto", "voz"])
@@ -355,7 +182,7 @@ def test_resultado_respeita_limite_da_entrega(monkeypatch, tmp_path, canal, falh
 
     with patch.object(pipeline.intelligence, "analisar", return_value=metadados), \
          patch.object(pipeline.database, "verificar_cooldown", return_value=True), \
-         patch.object(pipeline.canal_voz, "avaliar", return_value=(False, False)), \
+         patch.object(pipeline.canal_voz, "sugerir_voz", return_value=False), \
          patch.object(pipeline.database, "buscar_musica", return_value=str(acervo)), \
          patch.object(pipeline.database, "registrar_pedido", registrar), \
          patch.object(pipeline.stt, "transcrever", return_value="toca Evidências"), \

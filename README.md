@@ -211,7 +211,33 @@ cd dashboard-web
 npm run build
 ```
 
-The Python suite uses local fixtures and fakes for external services. It includes repertoire and electoral rules, voice-channel enforcement, YouTube throttling, WAHA recovery and delivery-result regression tests. Live WhatsApp, downloads, audio playback and database integration still need their own environment checks.
+The Python suite uses local fixtures and fakes for external services. It includes repertoire rules, removal of election-era blocks, optional voice invitations, YouTube throttling, WAHA recovery and delivery-result regression tests. Live WhatsApp, downloads, audio playback and database integration still need their own environment checks.
+
+### Request rules and models on the client PC
+
+Election-era restrictions on song titles, artists and candidate names have been removed from the pipeline, classifier profile and Docker installation. Existing `eleitoral.json` files and `ELEITORAL_LISTA_*` settings are no longer read. Historical rejection records remain available in analytics.
+
+After the second successful text request, the confirmation includes an optional invitation to send future requests by voice. Text remains accepted. Further successful text requests include the invitation until a voice request resets the count. Only fulfilled requests in `CANAL_HISTORICO_DIAS` count; rejected requests and unknown legacy channels do not. The old `CANAL_TEXTO_MAX`, `CANAL_BLOQUEIO_MIN` and `CANAL_JANELA_MIN` settings no longer apply. `CANAL_VOZ_ATIVADO=false` disables only the invitation. The general cooldown and repertoire rules still apply.
+
+On an existing Docker installation, edit the client's `.env` to change responses and musical curiosities to GPT-5.6:
+
+```dotenv
+COMPOSER_MODELO=gpt-5.6
+PILULAS_MODELO=gpt-5.6
+PILULAS_CONTEXTO_MODELO=gpt-5.6
+```
+
+Keep `LLM_MODEL` unchanged: it controls identification of requests. `OPENAI_API_KEY` must be configured. New code defaults use GPT-5.6 for these three writing tasks, while explicit client settings retain priority. The API's [`gpt-5.6` alias routes to GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol). Short responses and curiosity personalization disable reasoning so their output budget is reserved for the listener-facing text. Previously cached curiosities are retained; the model change applies to new generations.
+
+After the updated server image is published and the updated `docker-compose.dist.yml` is on the client PC:
+
+```bash
+docker compose -f docker-compose.dist.yml pull servidor
+docker compose -f docker-compose.dist.yml up -d --no-deps --force-recreate servidor
+docker compose -f docker-compose.dist.yml logs --tail=100 servidor
+```
+
+Recreating the service is necessary to load changes from `.env`; a restart alone keeps its old environment. Keep the radio's customized `assistente.md`: if it lacks `## sugestao_voz`, the new code uses a built-in invitation, without requiring the profile to be overwritten.
 
 The LangGraph conversation experiment remains isolated on `codex/conversational-experiment`; it is not included in these changes based on `main`.
 

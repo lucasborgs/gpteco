@@ -27,9 +27,7 @@ import unicodedata
 
 
 def _normalizar(texto: str) -> str:
-    """Sem acento, minúsculas, espaços internos colapsados — mesmo critério
-    de core/eleitoral.py._normalizar, duplicado aqui para este módulo não
-    depender de outro (interface mínima, sem import cruzado)."""
+    """Sem acento, minúsculas e com espaços internos colapsados."""
     sem_acento = "".join(
         c for c in unicodedata.normalize("NFKD", texto) if not unicodedata.combining(c)
     )

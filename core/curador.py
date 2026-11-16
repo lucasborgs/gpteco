@@ -12,7 +12,8 @@ nunca deve afetar a entrega da música.
 
 Variáveis de ambiente:
   OPENAI_API_KEY   : chave da OpenAI (obrigatória).
-  PILULAS_MODELO   : modelo a usar (padrão: gpt-6.1-sol).
+  PILULAS_MODELO   : modelo a usar (padrão: gpt-5.6).
+  PILULAS_CONTEXTO_MODELO : personalização da curiosidade (padrão: gpt-5.6).
 """
 
 from __future__ import annotations
@@ -29,14 +30,9 @@ from core import luzia, llm_compat
 load_dotenv()
 
 _OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-# gpt-4o foi aposentado daqui: num teste de 10 faixas do repertório ele afirmou
-# que "Flor de Lis" era sobre a morte da esposa e da filha do Djavan, lenda
-# urbana que o próprio artista desmentiu — e a pílula vai ao ar em nome da
-# rádio. O gpt-6.1-sol foi o que trouxe mais fato verificável e não óbvio.
-PILULAS_MODELO: str = os.getenv("PILULAS_MODELO", "gpt-6.1-sol")
-# Personalização contextual segue no gpt-4o: ela só acrescenta 1 frase de ponte
-# a uma pílula já aprovada, não inventa fato novo — e é a chamada mais barata.
-PILULAS_CONTEXTO_MODELO: str = os.getenv("PILULAS_CONTEXTO_MODELO", "gpt-4o")
+PILULAS_MODELO: str = os.getenv("PILULAS_MODELO", "gpt-5.6")
+# Acrescenta uma frase de ponte à curiosidade quando há contexto do ouvinte.
+PILULAS_CONTEXTO_MODELO: str = os.getenv("PILULAS_CONTEXTO_MODELO", "gpt-5.6")
 
 # Cliente singleton — None se não houver chave da OpenAI configurada.
 _client: OpenAI | None = OpenAI(api_key=_OPENAI_API_KEY) if _OPENAI_API_KEY else None
@@ -197,7 +193,9 @@ def personalizar_pilula(pilula_base: str, texto_ouvinte: str) -> str:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            max_tokens=220,
+            **({"max_completion_tokens": 220, "reasoning_effort": "none"}
+               if PILULAS_CONTEXTO_MODELO in ("gpt-5.6", "gpt-5.6-sol")
+               else {"max_tokens": 220}),
         )
     except Exception as e:
         print(f"[CURADOR] Falha na personalização ({e}); usando pílula base.")
