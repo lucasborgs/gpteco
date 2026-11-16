@@ -6,6 +6,10 @@
 @tailwind utilities;
 
 @layer base {
+  section[id] {
+    scroll-margin-top: 4rem;
+  }
+
   body {
     @apply bg-app-bg text-content-primary font-sans;
   }

@@ -196,7 +196,24 @@ cp .env.local.example .env.local          # set DATABASE_URL (and OPENAI_API_KEY
 npm run dev                               # http://localhost:3000
 ```
 
-The dashboard reads the same PostgreSQL database and renders request analytics (audience heatmap, top genres, fulfillment rate, daily volume) with cross-filtering and an optional AI insights panel.
+The public homepage at `/` presents AKAPO and its plans. `/painel` and `/insights` read the same PostgreSQL database and render request analytics (audience heatmap, top genres, fulfillment rate, daily volume) with cross-filtering and an optional AI insights panel. Only the dashboard routes load analytics; the homepage does not depend on the database.
+
+Set `NEXT_PUBLIC_CONTACT_WHATSAPP` in `dashboard-web/.env.local` before building to send sales inquiries to WhatsApp (country code + area code + number). When it is empty or invalid, the buttons use `NEXT_PUBLIC_CONTACT_EMAIL`, which defaults to `contato@akapo.com.br`. These public values are embedded at build time. The plan cards describe the commercial offer; they do not implement billing or subscription access control.
+
+### Tests
+
+```bash
+pip install -r requirements.txt pytest
+python -m pytest -q tests
+python -m core.luzia.schema
+
+cd dashboard-web
+npm run build
+```
+
+The Python suite uses local fixtures and fakes for external services. It includes repertoire and electoral rules, voice-channel enforcement, YouTube throttling, WAHA recovery and delivery-result regression tests. Live WhatsApp, downloads, audio playback and database integration still need their own environment checks.
+
+The LangGraph conversation experiment remains isolated on `codex/conversational-experiment`; it is not included in these changes based on `main`.
 
 ---
 
@@ -214,7 +231,7 @@ This system ran in production for a real FM station. Reported honestly:
 ### Limitations & honesty notes
 
 - **No benchmark numbers are claimed here.** Latency depends on whether the song is cached and on third-party APIs (Groq/OpenAI, YouTube), so I am not publishing timing figures I cannot reproduce from artifacts in this repo.
-- **No automated test suite.** There is a manual mixer test script ([test_mixer.py](test_mixer.py)); the rest was validated through real usage.
+- **Delivery and database recording are separate operations.** Once a song is queued, a subsequent recording failure preserves the successful delivery result and returns `codigo="registro_pendente"`, with an operational log. There is no automatic retry of that recording; database-backed cooldown and analytics depend on it being saved.
 - **External dependencies:** the system relies on WAHA (WhatsApp), Groq/OpenAI, a YouTube source for downloads, and a PostgreSQL instance.
 - **ZaraRadio integration is Windows/file-based:** delivery targets ZaraRadio through a watched folder and its `CurrentSong.txt`, which is specific to that broadcast software.
 
