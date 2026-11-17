@@ -241,6 +241,16 @@ docker compose -f docker-compose.dist.yml logs --tail=100 servidor
 
 Recreating the service is necessary to load changes from `.env`; a restart alone keeps its old environment. Keep the radio's customized `assistente.md`: if it lacks `## sugestao_voz`, the new code uses a built-in invitation, without requiring the profile to be overwritten.
 
+For the Windows upgrade to `iamlucb/gpteco:main-12758fb`, run
+[`scripts/atualizar-lu-12758fb.ps1`](scripts/atualizar-lu-12758fb.ps1) from the
+existing installation directory. It checks the image revision, backs up the
+current environment and profile under `%LOCALAPPDATA%\gpteco\backups`, and
+prepares a versioned profile while preserving the radio metadata, repertoire,
+and hard rules. It updates the writing models and YouTube client, recreates
+only `servidor`, and restores the previous configuration if startup or final
+verification fails. The new profile path is saved in `ASSISTANT_PROFILE_FILE`;
+the previous profile stays available for rollback.
+
 The LangGraph conversation experiment remains isolated on `codex/conversational-experiment`; it is not included in these changes based on `main`.
 
 ### PO Token provider compatibility
