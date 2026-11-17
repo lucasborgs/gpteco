@@ -244,12 +244,16 @@ Recreating the service is necessary to load changes from `.env`; a restart alone
 For the Windows upgrade to `iamlucb/gpteco:main-12758fb`, run
 [`scripts/atualizar-lu-12758fb.ps1`](scripts/atualizar-lu-12758fb.ps1) from the
 existing installation directory. It checks the image revision, backs up the
-current environment and profile under `%LOCALAPPDATA%\gpteco\backups`, and
+current environment, Compose file, and active profile under `%LOCALAPPDATA%\gpteco\backups`, and
 prepares a versioned profile while preserving the radio metadata, repertoire,
 and hard rules. It updates the writing models and YouTube client, recreates
 only `servidor`, and restores the previous configuration if startup or final
 verification fails. The new profile path is saved in `ASSISTANT_PROFILE_FILE`;
-the previous profile stays available for rollback.
+the previous profile stays available for rollback. Legacy installations without
+a profile bind mount are supported: the script copies the profile actually
+loaded inside the running server and adds the new mount only to `servidor`.
+Before recreating it, the script checks that other services resolve to the same
+configuration as before. Both `.env` and Compose are restored on rollback.
 
 The LangGraph conversation experiment remains isolated on `codex/conversational-experiment`; it is not included in these changes based on `main`.
 

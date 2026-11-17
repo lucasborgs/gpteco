@@ -10,12 +10,12 @@
     }
 
     $antes = Read-ComposeConfig
-    $perfil = @($antes.services.servidor.volumes | Where-Object {
-        $_.target -eq '/app/config/assistente.md'
-    })
-    if ($perfil.Count -ne 1 -or -not (Test-Path -LiteralPath $perfil[0].source -PathType Leaf)) {
-        throw 'Perfil atual nao encontrado como arquivo. Envie esta mensagem antes de continuar.'
-    }
+    # Instalacoes antigas usam o perfil embutido, sem bind mount no Windows.
+    $perfilLido = docker compose -f docker-compose.dist.yml exec -T servidor python -B -c "from core import luzia; luzia._load(); print(luzia._cache.get('path'))"
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao localizar o perfil no servidor atual.' }
+    $perfilAtual = [string]@($perfilLido)[-1]
+    $perfilAtual = $perfilAtual.Trim()
+    if (-not $perfilAtual.StartsWith('/')) { throw 'Caminho do perfil atual invalido.' }
     if ([string]::IsNullOrWhiteSpace([string]$antes.services.servidor.environment.OPENAI_API_KEY)) {
         throw 'Configure OPENAI_API_KEY no .env para usar GPT-5.6. Nao envie a chave aqui.'
     }
@@ -35,12 +35,15 @@
     $nomePerfil = "assistente.lu-12758fb-$data.md"
     New-Item -ItemType Directory -Path $backup -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $raiz '.env') -Destination (Join-Path $backup 'env.original')
-    Copy-Item -LiteralPath $perfil[0].source -Destination (Join-Path $backup 'perfil.original.md')
+    Copy-Item -LiteralPath (Join-Path $raiz 'docker-compose.dist.yml') -Destination (Join-Path $backup 'compose.original.yml')
+    docker compose -f docker-compose.dist.yml cp "servidor:$perfilAtual" (Join-Path $backup 'perfil.original.md')
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao copiar o perfil atual. Instalacao preservada.' }
     Write-Host "Backup: $backup"
 
     @'
 import codecs, os, re
 from pathlib import Path
+import yaml
 from core import luzia
 from core.luzia.schema import validar
 
@@ -90,18 +93,56 @@ for k, v in valores.items():
     else:
         env = env.rstrip('\n') + '\n' + k + '=' + v + '\n'
 (pasta / 'env.novo').write_text(env, encoding='utf-8')
+
+# Altera o arquivo original, nao o JSON resolvido (que contem segredos do .env).
+config = yaml.safe_load(ler(pasta / 'compose.original.yml'))
+servidor = config['services']['servidor']
+servidor['image'] = '${GPTECO_IMAGE:-iamlucb/gpteco:main-12758fb}'
+ambiente = servidor.get('environment') or {}
+if isinstance(ambiente, list):
+    ambiente = {s.partition('=')[0]: s.partition('=')[2] if '=' in s else None for s in ambiente}
+ambiente['ASSISTANT_PROFILE_PATH'] = '/app/config/assistente.md'
+ambiente['YT_PLAYER_CLIENT'] = '${YT_PLAYER_CLIENT:-default}'
+servidor['environment'] = ambiente
+def alvo(montagem):
+    if isinstance(montagem, dict):
+        return montagem.get('target', '')
+    m = re.search(r':(/[^:]*)(?::[^:]+)?$', montagem)
+    return m.group(1) if m else ''
+volumes = servidor.get('volumes') or []
+if any(alvo(v) in ('/app', '/app/core', '/app/core/luzia') for v in volumes):
+    raise RuntimeError('Montagem de codigo-fonte detectada; atualizacao automatica cancelada')
+perfis = {'/app/config/assistente.md', os.environ['PERFIL_ATUAL']}
+servidor['volumes'] = [v for v in volumes if alvo(v) not in perfis] + [{
+    'type': 'bind',
+    'source': '${ASSISTANT_PROFILE_FILE:-./assistente.md}',
+    'target': '/app/config/assistente.md',
+    'read_only': True,
+}]
+(pasta / 'compose.novo.yml').write_text(
+    yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding='utf-8'
+)
 print('Perfil validado; dados da radio, repertorio e regras duras preservados.')
-'@ | docker run --rm -i --platform linux/amd64 --network none --mount "type=bind,source=$backup,target=/upgrade" --env "NOVO_PERFIL=$nomePerfil" --entrypoint python $imagem -B -
+'@ | docker run --rm -i --platform linux/amd64 --network none --mount "type=bind,source=$backup,target=/upgrade" --env "NOVO_PERFIL=$nomePerfil" --env "PERFIL_ATUAL=$perfilAtual" --entrypoint python $imagem -B -
     if ($LASTEXITCODE -ne 0) { throw 'Falha na preparacao. A instalacao atual foi preservada.' }
 
     Copy-Item -LiteralPath (Join-Path $backup 'perfil.novo.md') -Destination (Join-Path $raiz $nomePerfil)
     $recriacaoIniciada = $false
     try {
         Copy-Item -LiteralPath (Join-Path $backup 'env.novo') -Destination (Join-Path $raiz '.env') -Force
+        Copy-Item -LiteralPath (Join-Path $backup 'compose.novo.yml') -Destination (Join-Path $raiz 'docker-compose.dist.yml') -Force
         $depois = Read-ComposeConfig
         if ($depois.services.servidor.image -ne $imagem -or
             $depois.services.servidor.environment.YT_PLAYER_CLIENT -ne 'default') {
             throw 'O Compose nao assumiu a imagem ou o cliente esperado.'
+        }
+        foreach ($servico in $antes.services.PSObject.Properties) {
+            if ($servico.Name -eq 'servidor') { continue }
+            $valorDepois = $depois.services.PSObject.Properties[$servico.Name].Value
+            if (($servico.Value | ConvertTo-Json -Depth 100 -Compress) -ne
+                ($valorDepois | ConvertTo-Json -Depth 100 -Compress)) {
+                throw "Mudanca inesperada em outro servico: $($servico.Name)"
+            }
         }
         $montagem = @($depois.services.servidor.volumes | Where-Object {
             $_.target -eq '/app/config/assistente.md'
@@ -130,6 +171,7 @@ print('Perfil validado; dados da radio, repertorio e regras duras preservados.')
     } catch {
         $motivo = $_.Exception.Message
         Copy-Item -LiteralPath (Join-Path $backup 'env.original') -Destination (Join-Path $raiz '.env') -Force
+        Copy-Item -LiteralPath (Join-Path $backup 'compose.original.yml') -Destination (Join-Path $raiz 'docker-compose.dist.yml') -Force
         if ($recriacaoIniciada) {
             docker compose -f docker-compose.dist.yml up -d --no-deps --no-build --pull never --force-recreate servidor
             if ($LASTEXITCODE -ne 0) {
