@@ -70,7 +70,7 @@ Que tal deixar sua voz por aqui nos próximos pedidos? Manda um áudio com o nom
 Opa, não consegui concluir seu pedido agora. Pode tentar de novo daqui a pouquinho? 🎵
 
 ## pilula_prefixo
-*A Lu te conta:*
+*Curiosidade:*
 
 # 🎨 Tom da LuzIA
 > Controla a voz das respostas geradas, das curiosidades e das pontes com o contexto do ouvinte.
