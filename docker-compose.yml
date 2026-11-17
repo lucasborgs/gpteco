@@ -74,7 +74,7 @@ services:
       CURRENT_SONG_DIR: /app/workspace/current_song
       # Extração do YouTube — trocáveis pelo .env sem rebuild quando um cliente cair
       POT_PROVIDER_URL: ${POT_PROVIDER_URL:-http://bgutil-pot:4416}
-      YT_PLAYER_CLIENT: ${YT_PLAYER_CLIENT:-tv_simply}
+      YT_PLAYER_CLIENT: ${YT_PLAYER_CLIENT:-default}
       PYTHONUNBUFFERED: "1"
       # Perfil editável da assistente — em dev normalmente aponta pro próprio
       # luzia.md do repo (o bind mount abaixo), mas pode ser trocado via .env.

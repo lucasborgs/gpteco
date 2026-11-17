@@ -46,12 +46,11 @@ MAX_DURACAO_S: int = 900                      # 15 min — acima disso não é a
 MAX_FILESIZE_BYTES: int = 30 * 1024 * 1024    # 30 MB — rede de segurança no próprio download
 SEARCH_N: int = 5                             # nº de resultados avaliados na busca
 
-# Extração do YouTube: os clientes padrão do yt-dlp (android_vr, web_safari) estão
-# inutilizáveis — o primeiro recebe HTTP 403 na mídia e o segundo só entrega SABR.
-# tv_simply devolve URLs baixáveis, desde que acompanhado de um PO Token válido.
-# Ambos são configuráveis por .env: quando o YouTube bloquear tv_simply, basta
-# trocar a variável e reiniciar, sem rebuild da imagem.
-YT_PLAYER_CLIENT: str = os.getenv("YT_PLAYER_CLIENT", "tv_simply")
+# O yt-dlp escolhe os clientes do YouTube ao receber "default". Fixar tv_simply
+# passou a causar HTTP 403, inclusive com o yt-dlp atualizado. A seleção padrão
+# foi validada com download completo e pelo fluxo da rádio em produção.
+# Overrides continuam disponíveis via .env; recrie o serviço para carregá-los.
+YT_PLAYER_CLIENT: str = os.getenv("YT_PLAYER_CLIENT", "default")
 POT_PROVIDER_URL: str = os.getenv("POT_PROVIDER_URL", "http://bgutil-pot:4416")
 
 

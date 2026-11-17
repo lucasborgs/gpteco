@@ -75,7 +75,7 @@ services:
       CURRENT_SONG_DIR: /app/workspace/current_song
       # Extração do YouTube — trocáveis pelo .env sem rebuild quando um cliente cair
       POT_PROVIDER_URL: ${POT_PROVIDER_URL:-http://bgutil-pot:4416}
-      YT_PLAYER_CLIENT: ${YT_PLAYER_CLIENT:-tv_simply}
+      YT_PLAYER_CLIENT: ${YT_PLAYER_CLIENT:-default}
       # Sem isto o stdout fica em buffer de bloco e o log some se o container morrer
       PYTHONUNBUFFERED: "1"
       # Perfil editável da assistente — a imagem já sobe com um padrão embutido

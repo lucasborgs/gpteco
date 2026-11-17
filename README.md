@@ -245,6 +245,14 @@ The LangGraph conversation experiment remains isolated on `codex/conversational-
 
 ### PO Token provider compatibility
 
+The YouTube player client defaults to `default`, allowing yt-dlp to select
+its supported clients. If an existing installation explicitly sets
+`YT_PLAYER_CLIENT=tv_simply`, change it to `YT_PLAYER_CLIENT=default` and
+recreate only `servidor` to load the setting. In the November 16 production
+diagnosis, `tv_simply` returned HTTP 403 with yt-dlp 2026.08.19 and 2026.10.26;
+the default clients downloaded the full audio with both versions, and the
+installed version completed a real listener request after this change.
+
 The `bgutil-pot` HTTP server image and the Python `bgutil-ytdlp-pot-provider`
 plugin are both pinned to **1.3.2**. Keep them aligned: the provider's
 [1.3.2 release](https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/tag/1.3.2)
@@ -265,9 +273,10 @@ docker compose -f docker-compose.dist.yml logs --no-color --timestamps --tail=30
 These commands target the token provider and retain the client's current
 server image. Do not deploy this repository's whole Compose file just for
 this maintenance. Validate media access after the update: a successful
-`yt-dlp --simulate` run only verifies extraction and format selection.
-Use an in-memory HTTP range request to check the selected media URL without
-saving audio or sending a listener request through the radio queue.
+`yt-dlp --simulate` run only verifies extraction and format selection. A small
+HTTP range request verifies partial media access; it can succeed while a
+normal download still fails. Validate a full download into a temporary
+directory, then confirm a real listener request through the radio queue.
 
 For rollback, restore the backed-up Compose file and recreate only
 `bgutil-pot` again. The previous provider image should remain available
