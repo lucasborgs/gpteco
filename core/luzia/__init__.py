@@ -18,6 +18,7 @@ API pública:
     NOME_RADIO, GENERO_ACEITO, ANO_MAXIMO         (atributos)
     MSG_SUCESSO, MSG_COOLDOWN, ... MSG_ENCERRAMENTO (atributos)
     build_system_prompt() -> str
+    tom_luzia()           -> str   (voz compartilhada, inclusive nas curiosidades)
     diretrizes_luzia()    -> str   (tom + regras duras, p/ system prompt gerado)
     instrucao_composer(situacao) -> str
     instrucao_curador_contexto() -> str
@@ -252,6 +253,11 @@ def build_system_prompt() -> str:
         .replace("[[genero_aceito]]", genero)
         .replace("[[restricao_ano]]", restricao)
     ).strip()
+
+
+def tom_luzia() -> str:
+    """Voz editorial do perfil, sem as regras operacionais dos pedidos."""
+    return _load()["secoes"].get("tom", {}).get("_text", "")
 
 
 def diretrizes_luzia() -> str:

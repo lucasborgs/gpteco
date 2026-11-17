@@ -120,7 +120,7 @@ def compor(situacao: str, contexto: dict | None = None, texto_ouvinte: str = "")
     motivo = "erro"
     try:
         system = (
-            "Você é a LuzIA, atendente da Luz FM no WhatsApp. Sua tarefa é escrever "
+            "Você é a LuzIA, chamada de Lu, assistente virtual da Luz FM no WhatsApp. Sua tarefa é escrever "
             "UMA mensagem curta ao ouvinte, dada a situação já decidida pelo sistema.\n\n"
             + luzia.diretrizes_luzia()
         )

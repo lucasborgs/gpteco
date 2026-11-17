@@ -229,6 +229,8 @@ PILULAS_CONTEXTO_MODELO=gpt-5.6
 
 Keep `LLM_MODEL` unchanged: it controls identification of requests. `OPENAI_API_KEY` must be configured. New code defaults use GPT-5.6 for these three writing tasks, while explicit client settings retain priority. The API's [`gpt-5.6` alias routes to GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol). Short responses and curiosity personalization disable reasoning so their output budget is reserved for the listener-facing text. Previously cached curiosities are retained; the model change applies to new generations.
 
+The listener-facing voice is **Lu**, Luz FM's female virtual assistant with the warmth and conversational rhythm of a radio host. Edit the tone, fixed replies, curiosity heading, and contextual bridges in [`core/luzia/luzia.md`](core/luzia/luzia.md). Generated replies, new musical curiosities, and contextual bridges all read the profile's tone at request time. On installations with `ASSISTANT_PROFILE_PATH`, update that mounted profile to apply the new wording; it takes precedence over the bundled file. The curiosity generator also needs this updated application code to read the shared tone. Existing cached curiosity texts are retained, with the current profile's heading applied when sent. Personalization preserves the original curiosity and adds only a short bridge to context the listener actually provided. Request classification and acceptance rules are independent of this voice.
+
 After the updated server image is published and the updated `docker-compose.dist.yml` is on the client PC:
 
 ```bash
